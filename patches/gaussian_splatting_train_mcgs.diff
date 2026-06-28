@@ -1,0 +1,87 @@
+diff --git a/train.py b/train.py
+index 8206903..5d04d57 100644
+--- a/train.py
++++ b/train.py
+@@ -12,6 +12,7 @@
+ import os
+ import torch
+ from random import randint
++from pathlib import Path
+ from utils.loss_utils import l1_loss, ssim
+ from gaussian_renderer import render, network_gui
+ import sys
+@@ -40,6 +41,11 @@ try:
+ except:
+     SPARSE_ADAM_AVAILABLE = False
+ 
++MCGS_ROOT = Path(__file__).resolve().parents[2]
++if str(MCGS_ROOT) not in sys.path:
++    sys.path.insert(0, str(MCGS_ROOT))
++from manifold_gs.training_hooks import add_manifold_args, controller_from_args
++
+ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+ 
+     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
+@@ -62,6 +68,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
+ 
+     use_sparse_adam = opt.optimizer_type == "sparse_adam" and SPARSE_ADAM_AVAILABLE 
+     depth_l1_weight = get_expon_lr_func(opt.depth_l1_weight_init, opt.depth_l1_weight_final, max_steps=opt.iterations)
++    mcgs_controller = controller_from_args(opt)
+ 
+     viewpoint_stack = scene.getTrainCameras().copy()
+     viewpoint_indices = list(range(len(viewpoint_stack)))
+@@ -139,6 +146,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
+         else:
+             Ll1depth = 0
+ 
++        mcgs_loss = mcgs_controller.loss(
++            iteration,
++            gaussians.get_xyz,
++            gaussians.get_scaling,
++            gaussians.get_rotation,
++            gaussians.get_opacity,
++        )
++        loss += mcgs_loss
++
+         loss.backward()
+ 
+         iter_end.record()
+@@ -149,13 +165,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
+             ema_Ll1depth_for_log = 0.4 * Ll1depth + 0.6 * ema_Ll1depth_for_log
+ 
+             if iteration % 10 == 0:
+-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "Depth Loss": f"{ema_Ll1depth_for_log:.{7}f}"})
++                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "Depth Loss": f"{ema_Ll1depth_for_log:.{7}f}", "MCGS": f"{mcgs_controller.last_terms.get('mcgs_loss', 0.0):.{4}g}"})
+                 progress_bar.update(10)
+             if iteration == opt.iterations:
+                 progress_bar.close()
+ 
+             # Log and save
+             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
++            if tb_writer and mcgs_controller.last_terms:
++                for key, value in mcgs_controller.last_terms.items():
++                    tb_writer.add_scalar('train_loss_patches/' + key, value, iteration)
+             if (iteration in saving_iterations):
+                 print("\n[ITER {}] Saving Gaussians".format(iteration))
+                 scene.save(iteration)
+@@ -257,6 +276,7 @@ if __name__ == "__main__":
+     lp = ModelParams(parser)
+     op = OptimizationParams(parser)
+     pp = PipelineParams(parser)
++    add_manifold_args(parser)
+     parser.add_argument('--ip', type=str, default="127.0.0.1")
+     parser.add_argument('--port', type=int, default=6009)
+     parser.add_argument('--debug_from', type=int, default=-1)
+@@ -279,7 +299,11 @@ if __name__ == "__main__":
+     if not args.disable_viewer:
+         network_gui.init(args.ip, args.port)
+     torch.autograd.set_detect_anomaly(args.detect_anomaly)
+-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
++    opt_params = op.extract(args)
++    for key, value in vars(args).items():
++        if key.startswith("mcgs_"):
++            setattr(opt_params, key, value)
++    training(lp.extract(args), opt_params, pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+ 
+     # All done
+     print("\nTraining complete.")
