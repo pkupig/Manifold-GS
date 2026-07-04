@@ -31,6 +31,9 @@ The first local implementation layer is independent of CUDA extensions:
 - `scripts/analyze_gaussians.py`: CLI wrapper.
 - `scripts/extract_poisson_mesh.py`: Poisson mesh fallback from oriented surface splats.
 - `scripts/extract_patch_mesh.py`: patch-chart mesh extraction from Gaussian covariance geometry.
+- `scripts/export_asset_bundle.py`: export grouped OBJ/PLY patches, attached and residual
+  full-attribute Gaussian layers, a conservative collision candidate, source mappings,
+  and a machine-readable asset manifest.
 - `scripts/preflight_3dgs.py`: checks torch CUDA, 3DGS extensions, and PLY dependency.
 - `scripts/compare_diagnostics.py`: compares multiple diagnostic `summary.json` files and prints metric deltas.
 
@@ -77,6 +80,21 @@ python scripts/extract_patch_mesh.py \
   --ply path/to/point_cloud/iteration_30000/point_cloud.ply \
   --mesh experiments/example_diagnostics/patch_mesh.ply
 ```
+
+Hybrid asset bundle from the projected pipeline:
+
+```bash
+python scripts/export_asset_bundle.py \
+  --gaussians experiments/scene/manifold/projected_gaussians.ply \
+  --mesh experiments/scene/manifold/patch_mesh.ply \
+  --meta experiments/scene/manifold/patch_mesh_meta.npz \
+  --source-map experiments/scene/manifold/projected_manifold.npz \
+  --out experiments/scene/hybrid_asset
+```
+
+The explicit source map is required when projection filtered or reordered the original
+Gaussian rows. The collision output is a conservative candidate, not a production physics
+asset. The bundle intentionally retains uncertified Gaussians as a residual layer.
 
 ## Why this is the right first step
 

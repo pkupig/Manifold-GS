@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -28,9 +30,13 @@ class CompatibilityCache:
     orientation_signs: torch.Tensor
     target_neighbor_normals: torch.Tensor
     frames: torch.Tensor
+    support_metric: torch.Tensor
+    support_shape: torch.Tensor
     support_gauss: torch.Tensor
     confidence: torch.Tensor
     radii: torch.Tensor
+    gram_min: torch.Tensor
+    reference_xyz: torch.Tensor
 
 
 @dataclass
@@ -71,11 +77,15 @@ class ManifoldLossController:
         lambda_normal: float = 0.002,
         lambda_support: float = 0.0,
         lambda_tangent: float = 0.0,
+        lambda_shape: float = 0.0,
         lambda_symmetry: float = 0.0,
         lambda_gauss: float = 0.0,
         compatibility_start: int | None = None,
         compatibility_ramp: int = 0,
         compatibility_confidence_floor: float = 0.05,
+        compatibility_alignment_floor: float = 0.0,
+        compatibility_gram_floor: float = 0.0,
+        compatibility_max_cache_drift: float = 0.0,
         proximal_iterations: int = 2,
         proximal_step: float = 0.5,
         proximal_min_confidence: float = 0.25,
@@ -96,11 +106,15 @@ class ManifoldLossController:
         self.lambda_normal = lambda_normal
         self.lambda_support = lambda_support
         self.lambda_tangent = lambda_tangent
+        self.lambda_shape = lambda_shape
         self.lambda_symmetry = lambda_symmetry
         self.lambda_gauss = lambda_gauss
         self.compatibility_start = warmup if compatibility_start is None else compatibility_start
         self.compatibility_ramp = compatibility_ramp
         self.compatibility_confidence_floor = compatibility_confidence_floor
+        self.compatibility_alignment_floor = compatibility_alignment_floor
+        self.compatibility_gram_floor = compatibility_gram_floor
+        self.compatibility_max_cache_drift = compatibility_max_cache_drift
         self.proximal_iterations = proximal_iterations
         self.proximal_step = proximal_step
         self.proximal_min_confidence = proximal_min_confidence
@@ -108,6 +122,8 @@ class ManifoldLossController:
         self.state: ManifoldGraphState | None = None
         self.last_refresh = -1
         self.last_terms: dict[str, float] = {}
+        self.diagnostic_history: list[dict[str, float | int]] = []
+        self.refresh_count = 0
 
     def _compatibility_scale(self, iteration: int) -> float:
         if iteration < self.compatibility_start:
@@ -115,6 +131,13 @@ class ManifoldLossController:
         if self.compatibility_ramp <= 0:
             return 1.0
         return min(1.0, (iteration - self.compatibility_start) / self.compatibility_ramp)
+
+    @staticmethod
+    def _cache_drift(xyz: torch.Tensor, compatibility: CompatibilityCache) -> torch.Tensor:
+        displacement = xyz[compatibility.indices] - compatibility.reference_xyz
+        # kNN geometry is invariant to a common translation.
+        displacement = displacement - displacement.mean(dim=0, keepdim=True)
+        return torch.linalg.norm(displacement, dim=1) / compatibility.radii.clamp_min(1e-8)
 
     @property
     def enabled(self) -> bool:
@@ -128,6 +151,7 @@ class ManifoldLossController:
                 self.lambda_normal,
                 self.lambda_support,
                 self.lambda_tangent,
+                self.lambda_shape,
                 self.lambda_symmetry,
                 self.lambda_gauss,
             )
@@ -146,9 +170,36 @@ class ManifoldLossController:
             return
         point_count_changed = self.state is not None and self.state.num_points != xyz.shape[0]
         if self.state is not None and not point_count_changed and (iteration - self.last_refresh) < self.refresh_interval:
-            return
+            compatibility = self.state.compatibility
+            if compatibility is None or self.compatibility_max_cache_drift <= 0:
+                return
+            drift = self._cache_drift(xyz, compatibility)
+            if float(drift.max().detach().cpu()) <= self.compatibility_max_cache_drift:
+                return
         self.state = self._build_graph(xyz, eigenvalues, normals, opacity, geometric_mass)
         self.last_refresh = iteration
+        self.refresh_count += 1
+
+    def export_diagnostics(self, path: str | Path) -> None:
+        payload = {
+            "refresh_count": self.refresh_count,
+            "last_refresh": self.last_refresh,
+            "history": self.diagnostic_history,
+        }
+        output = Path(path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    def record_diagnostics(self, iteration: int) -> None:
+        if iteration % 10 != 0 and iteration != self.last_refresh:
+            return
+        row: dict[str, float | int] = {
+            "iteration": iteration,
+            "last_refresh": self.last_refresh,
+            "refresh_count": self.refresh_count,
+        }
+        row.update(self.last_terms)
+        self.diagnostic_history.append(row)
 
     def _build_graph(
         self,
@@ -203,7 +254,7 @@ class ManifoldLossController:
             proximal_confidence = torch.empty((0,), dtype=xyz.dtype, device=xyz.device)
             proximal_radii = torch.empty((0,), dtype=xyz.dtype, device=xyz.device)
             compatibility = None
-            if any(weight > 0 for weight in (self.lambda_support, self.lambda_tangent, self.lambda_symmetry, self.lambda_gauss)):
+            if any(weight > 0 for weight in (self.lambda_support, self.lambda_tangent, self.lambda_shape, self.lambda_symmetry, self.lambda_gauss)):
                 candidates = torch.nonzero(opacity.reshape(-1) > self.opacity_min, as_tuple=False).reshape(-1)
                 if candidates.numel() > self.max_points:
                     candidate_mass = geometric_mass[candidates].reshape(-1)
@@ -226,7 +277,7 @@ class ManifoldLossController:
                         proximal_normals = torch.as_tensor(projected.normals[accepted], dtype=xyz.dtype, device=xyz.device)
                         proximal_confidence = torch.as_tensor(projected.confidence[accepted], dtype=xyz.dtype, device=xyz.device)
                         proximal_radii = torch.as_tensor(projected.radii[accepted], dtype=xyz.dtype, device=xyz.device)
-                        if self.lambda_symmetry > 0 or self.lambda_gauss > 0:
+                        if self.lambda_shape > 0 or self.lambda_symmetry > 0 or self.lambda_gauss > 0:
                             compatibility = self._build_compatibility_cache(
                                 projected,
                                 candidates,
@@ -273,8 +324,11 @@ class ManifoldLossController:
         derivative_ops = []
         orientation_signs = []
         frames = []
+        support_metric = []
+        support_shape = []
         support_gauss = []
         radii = []
+        gram_min = []
         for center_index in selected:
             ids = neighbors[center_index]
             delta = points[ids] - points[center_index]
@@ -292,30 +346,42 @@ class ManifoldLossController:
             uv = delta @ frame
             height = delta @ normal
             radius = max(float(distances[center_index, -1]), 1e-8)
+            scaled_uv = uv / radius
             weights = np.exp(-np.sum(uv * uv, axis=1) / (radius * radius)) * np.maximum(mass[ids], 1e-16)
             weights /= max(np.sum(weights), 1e-16)
             root = np.sqrt(weights)
 
-            design1 = np.column_stack([np.ones(len(ids)), uv])
+            design1 = np.column_stack([np.ones(len(ids)), scaled_uv])
+            weighted_design1 = design1 * root[:, None]
             operator = np.linalg.pinv(design1 * root[:, None], rcond=1e-6) * root[None, :]
-            derivative_ops.append(operator[1:3])
+            derivative_ops.append(operator[1:3] / radius)
 
             design2 = np.column_stack([
-                np.ones(len(ids)), uv[:, 0], uv[:, 1],
-                0.5 * uv[:, 0] ** 2, uv[:, 0] * uv[:, 1], 0.5 * uv[:, 1] ** 2,
+                np.ones(len(ids)), scaled_uv[:, 0], scaled_uv[:, 1],
+                0.5 * scaled_uv[:, 0] ** 2,
+                scaled_uv[:, 0] * scaled_uv[:, 1],
+                0.5 * scaled_uv[:, 1] ** 2,
             ])
+            weighted_design2 = design2 * root[:, None]
             coeff = np.linalg.lstsq(design2 * root[:, None], height * root, rcond=1e-6)[0]
-            gradient = coeff[1:3]
-            hessian = np.array([[coeff[3], coeff[4]], [coeff[4], coeff[5]]])
+            gradient = coeff[1:3] / radius
+            hessian = np.array([[coeff[3], coeff[4]], [coeff[4], coeff[5]]]) / (radius * radius)
             metric = np.eye(2) + np.outer(gradient, gradient)
             second = hessian / np.sqrt(1.0 + float(gradient @ gradient))
-            support_gauss.append(float(np.linalg.det(np.linalg.solve(metric, second))))
+            support_s = np.linalg.solve(metric, second)
+            support_metric.append(metric)
+            support_shape.append(support_s)
+            support_gauss.append(float(np.linalg.det(support_s)))
 
             signs = np.sign(normals[ids] @ normal)
             signs[signs == 0] = 1.0
             orientation_signs.append(signs)
             frames.append(frame)
             radii.append(radius)
+            gram_min.append(min(
+                float(np.linalg.eigvalsh(weighted_design1.T @ weighted_design1)[0]),
+                float(np.linalg.eigvalsh(weighted_design2.T @ weighted_design2)[0]),
+            ))
 
         selected_t = torch.as_tensor(selected, dtype=torch.long, device=device)
         neighbor_local = torch.as_tensor(neighbors[selected], dtype=torch.long, device=device)
@@ -326,9 +392,13 @@ class ManifoldLossController:
             orientation_signs=torch.as_tensor(np.stack(orientation_signs), dtype=dtype, device=device),
             target_neighbor_normals=torch.as_tensor(normals[neighbors[selected]], dtype=dtype, device=device),
             frames=torch.as_tensor(np.stack(frames), dtype=dtype, device=device),
+            support_metric=torch.as_tensor(np.stack(support_metric), dtype=dtype, device=device),
+            support_shape=torch.as_tensor(np.stack(support_shape), dtype=dtype, device=device),
             support_gauss=torch.as_tensor(np.asarray(support_gauss), dtype=dtype, device=device),
             confidence=torch.as_tensor(projected.confidence[selected], dtype=dtype, device=device),
             radii=torch.as_tensor(np.asarray(radii), dtype=dtype, device=device),
+            gram_min=torch.as_tensor(np.asarray(gram_min), dtype=dtype, device=device),
+            reference_xyz=torch.as_tensor(points[selected], dtype=dtype, device=device),
         )
 
     def loss(
@@ -404,14 +474,29 @@ class ManifoldLossController:
                 "pdc,pcb->pdb", normal_derivatives, compatibility.frames
             )
             confidence = compatibility.confidence.clamp_min(self.compatibility_confidence_floor)
+            center_support_normals = compatibility.target_neighbor_normals[:, 0]
+            alignment = torch.abs(torch.sum(normals[compatibility.indices] * center_support_normals, dim=1))
+            if self.compatibility_alignment_floor > 0:
+                alignment_weight = (
+                    (alignment - self.compatibility_alignment_floor)
+                    / max(1.0 - self.compatibility_alignment_floor, 1e-6)
+                ).clamp(0.0, 1.0)
+                confidence = confidence * alignment_weight
+            if self.compatibility_gram_floor > 0:
+                confidence = confidence * (compatibility.gram_min / self.compatibility_gram_floor).clamp(0.0, 1.0)
             compat_weights = geometric_mass[compatibility.indices].reshape(-1) * confidence
             compat_weights = compat_weights / compat_weights.sum().clamp_min(1e-12)
             if self.lambda_symmetry > 0 and compatibility_scale > 0:
                 asymmetry = (second_form[:, 0, 1] - second_form[:, 1, 0]) * compatibility.radii
                 terms["mcgs_symmetry"] = torch.sum(compat_weights * asymmetry.square())
-            if self.lambda_gauss > 0 and compatibility_scale > 0:
+            if (self.lambda_shape > 0 or self.lambda_gauss > 0) and compatibility_scale > 0:
                 symmetric_second = 0.5 * (second_form + second_form.transpose(1, 2))
-                predicted_gauss = torch.linalg.det(symmetric_second)
+                predicted_shape = torch.linalg.solve(compatibility.support_metric, symmetric_second)
+            if self.lambda_shape > 0 and compatibility_scale > 0:
+                residual = (predicted_shape - compatibility.support_shape) * compatibility.radii[:, None, None]
+                terms["mcgs_shape"] = torch.sum(compat_weights * torch.sum(residual.square(), dim=(1, 2)))
+            if self.lambda_gauss > 0 and compatibility_scale > 0:
+                predicted_gauss = torch.linalg.det(predicted_shape)
                 residual = (predicted_gauss - compatibility.support_gauss) * compatibility.radii.square()
                 terms["mcgs_gauss"] = torch.sum(compat_weights * residual.square())
 
@@ -423,6 +508,7 @@ class ManifoldLossController:
             "mcgs_normal": self.lambda_normal,
             "mcgs_support": self.lambda_support,
             "mcgs_tangent": self.lambda_tangent,
+            "mcgs_shape": self.lambda_shape * compatibility_scale,
             "mcgs_symmetry": self.lambda_symmetry * compatibility_scale,
             "mcgs_gauss": self.lambda_gauss * compatibility_scale,
         }
@@ -434,6 +520,13 @@ class ManifoldLossController:
         self.last_terms["mcgs_graph_points"] = float(active.numel())
         self.last_terms["mcgs_graph_edges"] = float(state.edges.shape[0])
         self.last_terms["mcgs_compatibility_scale"] = compatibility_scale
+        if compatibility is not None and compatibility.indices.numel() > 0:
+            self.last_terms["mcgs_alignment_min"] = float(alignment.min().detach().cpu())
+            self.last_terms["mcgs_alignment_mean"] = float(alignment.mean().detach().cpu())
+            self.last_terms["mcgs_gram_min"] = float(compatibility.gram_min.min().detach().cpu())
+            cache_drift = self._cache_drift(xyz, compatibility)
+            self.last_terms["mcgs_cache_drift_mean"] = float(cache_drift.mean().detach().cpu())
+            self.last_terms["mcgs_cache_drift_max"] = float(cache_drift.max().detach().cpu())
         return total
 
 
@@ -450,11 +543,39 @@ def add_manifold_args(parser) -> None:
     group.add_argument("--mcgs_lambda_normal", type=float, default=0.0)
     group.add_argument("--mcgs_lambda_support", type=float, default=0.0)
     group.add_argument("--mcgs_lambda_tangent", type=float, default=0.0)
+    group.add_argument("--mcgs_lambda_shape", type=float, default=0.0)
     group.add_argument("--mcgs_lambda_symmetry", type=float, default=0.0)
     group.add_argument("--mcgs_lambda_gauss", type=float, default=0.0)
     group.add_argument("--mcgs_compatibility_start", type=int, default=None)
     group.add_argument("--mcgs_compatibility_ramp", type=int, default=0)
     group.add_argument("--mcgs_compatibility_confidence_floor", type=float, default=0.05)
+    group.add_argument("--mcgs_compatibility_alignment_floor", type=float, default=0.0)
+    group.add_argument("--mcgs_compatibility_gram_floor", type=float, default=0.0)
+    group.add_argument("--mcgs_compatibility_max_cache_drift", type=float, default=0.0)
+    group.add_argument("--mcgs_oracle_depth_dir", type=str, default=None)
+    group.add_argument("--mcgs_oracle_depth_mode", choices=("z", "inverse"), default="z")
+    group.add_argument("--mcgs_lambda_oracle_depth", type=float, default=0.0)
+    group.add_argument("--mcgs_lambda_oracle_depth_gradient", type=float, default=0.0)
+    group.add_argument("--mcgs_lambda_multiview", type=float, default=0.0)
+    group.add_argument("--mcgs_multiview_start", type=int, default=1000)
+    group.add_argument("--mcgs_multiview_interval", type=int, default=4)
+    group.add_argument("--mcgs_multiview_max_points", type=int, default=4096)
+    group.add_argument("--mcgs_multiview_occlusion_tolerance", type=float, default=0.08)
+    group.add_argument("--mcgs_multiview_texture_floor", type=float, default=0.01)
+    group.add_argument("--mcgs_lambda_static_support", type=float, default=0.0)
+    group.add_argument("--mcgs_static_support_start", type=int, default=500)
+    group.add_argument("--mcgs_static_support_interval", type=int, default=1)
+    group.add_argument("--mcgs_static_support_max_points", type=int, default=8192)
+    group.add_argument("--mcgs_static_support_reference_max_points", type=int, default=0)
+    group.add_argument("--mcgs_static_support_tangent_radius_cap", type=float, default=0.0)
+    group.add_argument("--mcgs_oracle_depth_noise_fraction", type=float, default=0.0)
+    group.add_argument("--mcgs_oracle_depth_dropout", type=float, default=0.0)
+    group.add_argument("--mcgs_oracle_depth_seed", type=int, default=0)
+    group.add_argument("--mcgs_oracle_depth_scale", type=float, default=1.0)
+    group.add_argument("--mcgs_oracle_depth_bias_fraction", type=float, default=0.0)
+    group.add_argument("--mcgs_oracle_depth_low_frequency_fraction", type=float, default=0.0)
+    group.add_argument("--mcgs_oracle_depth_affine_calibrate", action="store_true", default=False)
+    group.add_argument("--mcgs_oracle_depth_calibration_min_points", type=int, default=32)
     group.add_argument("--mcgs_proximal_iterations", type=int, default=2)
     group.add_argument("--mcgs_proximal_step", type=float, default=0.5)
     group.add_argument("--mcgs_proximal_min_confidence", type=float, default=0.25)
@@ -480,11 +601,15 @@ def controller_from_args(args) -> ManifoldLossController:
         lambda_normal=args.mcgs_lambda_normal,
         lambda_support=args.mcgs_lambda_support,
         lambda_tangent=args.mcgs_lambda_tangent,
+        lambda_shape=args.mcgs_lambda_shape,
         lambda_symmetry=args.mcgs_lambda_symmetry,
         lambda_gauss=args.mcgs_lambda_gauss,
         compatibility_start=args.mcgs_compatibility_start,
         compatibility_ramp=args.mcgs_compatibility_ramp,
         compatibility_confidence_floor=args.mcgs_compatibility_confidence_floor,
+        compatibility_alignment_floor=args.mcgs_compatibility_alignment_floor,
+        compatibility_gram_floor=args.mcgs_compatibility_gram_floor,
+        compatibility_max_cache_drift=args.mcgs_compatibility_max_cache_drift,
         proximal_iterations=args.mcgs_proximal_iterations,
         proximal_step=args.mcgs_proximal_step,
         proximal_min_confidence=args.mcgs_proximal_min_confidence,

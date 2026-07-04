@@ -170,6 +170,49 @@ This is not a single new theorem and should not be presented as one. Our useful
 new theorem can instead connect measurable Gaussian quantities to sufficient
 conditions for an existing reconstruction theorem.
 
+### 5.1 Quantitative compatibility-to-GT target
+
+The missing link can be isolated as two assumptions rather than hidden inside
+an unconditional reconstruction claim. Let `Z` denote the compatible
+surface-varifold class and let `D_h(V_G)` collect shape, symmetry, Gauss, and
+Codazzi defects. Target an estimator-specific error bound
+
+```math
+dist(V_G,Z) <= C_B(D_h(V_G)+epsilon_h),
+```
+
+where `epsilon_h` explicitly contains graph fill distance, MLS bias, normal
+noise, and mass-quadrature error. Separately, require the restricted rendering
+operator to have a stable inverse on `Z`:
+
+```math
+d_V(U,V_*) <= C_R d_image(R(U),R(V_*)),  U in Z.
+```
+
+If rendering is locally `L_R`-Lipschitz, then for a nearest compatible field
+`U=Pi_Z(V_G)` the triangle inequality yields
+
+```math
+d_V(V_G,V_*)
+<= C_R d_image(R(V_G),R(V_*))
+ + (1+C_R L_R)C_B(D_h(V_G)+epsilon_h).
+```
+
+This decomposition is the defensible theoretical explanation for combining a
+data term with compatibility. Classical Bonnet only identifies the zero set
+`Z`; it does not provide `C_B`. Sparse-view image formation is not stably
+injective without visibility/scene assumptions, so it does not automatically
+provide `C_R` either. Proving or empirically certifying these two constants on
+a restricted analytic scene class is now the central reverse-theory target.
+
+The bound is absolute. It cannot imply a registered relative gain such as 20%
+without both an upper bound for the candidate and a nonzero lower bound for the
+baseline. Percentage PASS thresholds therefore remain experimental criteria,
+not theorem conclusions.
+
+`THEORY-STABILITY.md` proves the corresponding linearized graph estimate and
+lists the residuals that must be measured separately.
+
 ## 6. Projection theorem target
 
 Let noisy centers be within `delta` of `M`, with fill distance `h`, reach

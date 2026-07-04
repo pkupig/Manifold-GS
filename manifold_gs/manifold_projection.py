@@ -88,7 +88,16 @@ def _fit_local_surfaces(
         u = delta @ tangent_u
         v = delta @ tangent_v
         height = delta @ plane_normal
-        design = np.column_stack([u * u, u * v, v * v, u, v, np.ones_like(u)])
+        scaled_u = u / bandwidth
+        scaled_v = v / bandwidth
+        design = np.column_stack([
+            scaled_u * scaled_u,
+            scaled_u * scaled_v,
+            scaled_v * scaled_v,
+            scaled_u,
+            scaled_v,
+            np.ones_like(scaled_u),
+        ])
         sqrt_weights = np.sqrt(weights)
         try:
             coeff, _, _, _ = np.linalg.lstsq(
@@ -97,19 +106,21 @@ def _fit_local_surfaces(
             query_delta = xyz[i] - center
             query_u = float(query_delta @ tangent_u)
             query_v = float(query_delta @ tangent_v)
+            query_scaled_u = query_u / bandwidth
+            query_scaled_v = query_v / bandwidth
             predicted_height = float(np.array([
-                query_u * query_u,
-                query_u * query_v,
-                query_v * query_v,
-                query_u,
-                query_v,
+                query_scaled_u * query_scaled_u,
+                query_scaled_u * query_scaled_v,
+                query_scaled_v * query_scaled_v,
+                query_scaled_u,
+                query_scaled_v,
                 1.0,
             ]) @ coeff)
             centers[i] = xyz[i] + (
                 predicted_height - float(query_delta @ plane_normal)
             ) * plane_normal
-            du = 2.0 * coeff[0] * query_u + coeff[1] * query_v + coeff[3]
-            dv = coeff[1] * query_u + 2.0 * coeff[2] * query_v + coeff[4]
+            du = (2.0 * coeff[0] * query_scaled_u + coeff[1] * query_scaled_v + coeff[3]) / bandwidth
+            dv = (coeff[1] * query_scaled_u + 2.0 * coeff[2] * query_scaled_v + coeff[4]) / bandwidth
             fitted_normal = plane_normal - du * tangent_u - dv * tangent_v
             normals[i] = fitted_normal / max(np.linalg.norm(fitted_normal), 1e-12)
         except np.linalg.LinAlgError:

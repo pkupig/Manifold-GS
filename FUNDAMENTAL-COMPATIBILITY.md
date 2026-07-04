@@ -105,6 +105,10 @@ partial n_i = D_i [n_j]_{j in N(i)}.
 This enables:
 
 ```math
+L_shape = sum_i q_i c_i ||S^cov_i-S^support_i||_F^2 r_i^2,
+```
+
+```math
 L_sym = sum_i q_i ||II^cov_i-(II^cov_i)^T||^2,
 ```
 
@@ -135,6 +139,55 @@ Before `start`, only first-order/proximal terms act. Between `start` and
 `start+ramp`, symmetry and Gauss weights increase linearly. This avoids asking
 derivatives of an unstable covariance-normal field to satisfy a second-order
 constraint.
+
+Current implementation status:
+
+- `L_support`, `L_tangent`: enabled in training;
+- `L_shape`: enabled in training via `--mcgs_lambda_shape`;
+- `L_sym`: enabled in training;
+- `L_Gauss`: enabled but still considered experimental;
+- discrete Codazzi: still offline diagnostic only, not a headline training term yet.
+
+The local least-squares operators now use radius-normalized coordinates, so
+their numerical rank threshold is invariant to scene scale and densification
+radius. Offline diagnostics additionally report:
+
+- covariance/support absolute normal alignment (`normal_alignment_abs`);
+- scaled linear and quadratic Gram minimum eigenvalues;
+- normalized kNN boundary gap;
+- normalized PCA normal eigengap.
+
+Training exposes optional `--mcgs_compatibility_alignment_floor` and
+`--mcgs_compatibility_gram_floor` gates and an optional
+`--mcgs_compatibility_max_cache_drift` adaptive-refresh trigger. All default to
+zero, preserving prior behavior until their thresholds are calibrated. Cache
+drift is logged relative to neighborhood radius after removing common
+translation. Shape-only training now builds the compatibility cache
+independently of whether symmetry or Gauss is enabled.
+
+### Cache-drift mechanism check
+
+A 300-step analytic-sphere comparison used identical losses and changed only
+cache refresh behavior. Fixed refresh used `interval=100`; adaptive refresh
+kept normalized relative center drift below `0.01`.
+
+| metric | fixed cache | drift-adaptive |
+|---|---:|---:|
+| graph refreshes | 3 | 31 |
+| maximum recorded cache drift | 0.10924 | 0.00996 |
+| all-opaque Chamfer | 0.069729 | 0.069726 |
+| normal median | **9.49 deg** | 10.03 deg |
+| normalized kernel varifold | 0.096276 | **0.096048** |
+| shape mismatch median | 0.23274 | **0.22991** |
+| symmetry median | 0.21058 | **0.18650** |
+| Codazzi median | 0.42354 | **0.41432** |
+
+Adaptive refresh improves the compatibility mechanism, especially symmetry,
+with about 27% wall-time overhead in this small run. It does not materially
+improve GT geometry and slightly worsens the normal median. This supports the
+theoretical decomposition: estimator freshness controls realizability defect,
+not the separate data-identifiability term. This is one short mechanism run,
+not a benchmark claim or a frozen `0.01` threshold.
 
 ## 300-step mechanism calibration
 
@@ -242,12 +295,16 @@ more seeds plus plane/torus scenes, not post-hoc sphere threshold tuning.
 
 ## Required ablations
 
-- tangent only, matching GeoSplat-style local geometry;
+- first-order normal supervision (`tangent` in historical manifests), an internal
+  ablation rather than a GeoSplat reproduction or proxy;
 - `q` conservation only;
 - support+tangent proximal projection;
 - plus second-form symmetry;
+- plus support/normal shape-operator match;
 - plus Gauss residual;
 - plus Codazzi residual.
 
-The paper contribution exists only if the compatibility terms improve geometry
-beyond tangent/curvature alignment baselines such as GeoSplat.
+The internal contribution exists only if the compatibility terms improve
+geometry beyond first-order normal supervision. A comparative paper claim
+additionally requires running the authors' GeoSplat implementation (or a clearly
+documented faithful reimplementation) under the same data and evaluator.

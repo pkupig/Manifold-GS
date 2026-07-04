@@ -39,13 +39,22 @@ def upper_bound_decision(stats: dict[str, float], threshold: float) -> str:
     return "INCONCLUSIVE"
 
 
+def safe_float(value: float | int | None) -> float | None:
+    if value is None:
+        return None
+    value = float(value)
+    if np.isnan(value) or np.isinf(value):
+        return None
+    return value
+
+
 def load_metrics(path: Path, geometry_subset: str) -> dict[str, float]:
     geometry_report = json.loads((path / "geometry_metrics.json").read_text(encoding="utf-8"))
     geometry = geometry_report[geometry_subset]
     rendering = json.loads((path / "heldout_metrics.json").read_text(encoding="utf-8"))
     compatibility = json.loads((path / "fundamental" / "summary.json").read_text(encoding="utf-8"))
     mesh = json.loads((path / "asset" / "mesh_metrics.json").read_text(encoding="utf-8"))
-    return {
+    metrics = {
         "chamfer_l1": geometry["chamfer_l1"],
         "normal_accuracy_median_deg": geometry["normal_accuracy_median_deg"],
         "normalized_kernel_varifold": geometry["normalized_kernel_varifold"],
@@ -59,6 +68,46 @@ def load_metrics(path: Path, geometry_subset: str) -> dict[str, float]:
         "mesh_boundary_edges": mesh["topology"]["boundary_edges"],
         "mesh_nonmanifold_edges": mesh["topology"]["nonmanifold_edges"],
     }
+    prune_ledger_path = path / "geom_mass_prune_ledger.json"
+    if prune_ledger_path.exists():
+        prune = json.loads(prune_ledger_path.read_text(encoding="utf-8"))
+        total_pruned_mass = safe_float(prune.get("total_pruned_mass"))
+        total_transport_cost = safe_float(prune.get("total_transport_cost"))
+        metrics.update({
+            "prune_event_count": int(prune.get("event_count", 0)),
+            "pruned_mass_total": 0.0 if total_pruned_mass is None else total_pruned_mass,
+            "prune_transport_total": 0.0 if total_transport_cost is None else total_transport_cost,
+            "prune_transport_per_mass": (
+                total_transport_cost / total_pruned_mass
+                if total_pruned_mass not in (None, 0.0) and total_transport_cost is not None
+                else None
+            ),
+        })
+    return metrics
+
+
+def summarize_rows(rows: list[dict], methods: tuple[str, ...]) -> dict[str, dict[str, float]]:
+    summary: dict[str, dict[str, float]] = {}
+    for method in methods:
+        metric_names = sorted({
+            key
+            for row in rows
+            if method in row
+            for key, value in row[method].items()
+            if isinstance(value, (int, float)) and safe_float(value) is not None
+        })
+        method_summary = {}
+        for metric in metric_names:
+            values = [
+                safe_float(row[method].get(metric))
+                for row in rows
+                if method in row
+            ]
+            values = [value for value in values if value is not None]
+            if values:
+                method_summary[metric] = float(np.mean(values))
+        summary[method] = method_summary
+    return summary
 
 
 def compute_checks(rows: list[dict], comparison: dict) -> tuple[dict, str]:
@@ -127,6 +176,7 @@ def main() -> None:
     baseline = comparison["baseline"]
     matched = comparison["matched_geometry_baseline"]
     candidate = comparison["candidate"]
+    methods = (baseline, matched, candidate)
     geometry_subset = comparison.get("geometry_subset", "all_opaque")
 
     rows = []
@@ -134,7 +184,7 @@ def main() -> None:
     for scene in manifest["scenes"]:
         for seed in manifest["seeds"]:
             row = {"scene": scene, "seed": seed}
-            for method in (baseline, matched, candidate):
+            for method in methods:
                 path = run_root / f"{scene}_s{seed}_{method}"
                 try:
                     row[method] = load_metrics(path, geometry_subset)
@@ -142,16 +192,30 @@ def main() -> None:
                     missing.append(str(error.filename))
             rows.append(row)
     if missing:
-        report = {"status": "INCOMPLETE", "missing": sorted(set(missing)), "rows": rows}
+        report = {
+            "status": "INCOMPLETE",
+            "missing": sorted(set(missing)),
+            "rows": rows,
+            "method_means": summarize_rows(rows, methods),
+        }
     else:
         checks, status = compute_checks(rows, comparison)
         scene_results = {}
+        scene_method_means = {}
         if len(manifest["scenes"]) > 1:
             for scene in manifest["scenes"]:
                 scene_rows = [row for row in rows if row["scene"] == scene]
                 scene_checks, scene_status = compute_checks(scene_rows, comparison)
                 scene_results[scene] = {"status": scene_status, "checks": scene_checks}
-        report = {"status": status, "checks": checks, "scene_results": scene_results, "rows": rows}
+                scene_method_means[scene] = summarize_rows(scene_rows, methods)
+        report = {
+            "status": status,
+            "checks": checks,
+            "scene_results": scene_results,
+            "rows": rows,
+            "method_means": summarize_rows(rows, methods),
+            "scene_method_means": scene_method_means,
+        }
 
     out = Path(args.out) if args.out else benchmark / "summary.json"
     out.parent.mkdir(parents=True, exist_ok=True)

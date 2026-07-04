@@ -1,0 +1,44 @@
+1. 学术顶会经典流派（严谨、全面、分量感足）
+这类标题最符合 SIGGRAPH 或 CVPR 的传统审美，一眼就能看出数学根基和核心贡献。
+
+Manifold-Conservative Gaussian Splatting: Conservative Measures and Realizability Certification for Surface Reconstruction
+
+中文副标： 流形守恒高斯泼溅：面向曲面重建的守恒测度与可实现性认证
+
+特点： 比原标题更精炼，去掉了较冗余的修饰词，直接点出“曲面重建”这一落脚点。
+
+Refinement-Conservative Gaussian Splatting via Discrete Geometric Measures
+
+中文副标： 基于离散几何测度的细化守恒高斯泼溅
+
+特点： 强调了 refinement-conservative（细化守恒）这一动态过程中的核心解决点，读起来更有动态感。
+
+2. 现代 AI 缩略词流派（好记、利于开源传播）
+提炼出一个响亮的简称（Project Name），有利于后续在 GitHub 和学术圈建立记忆点。
+
+MC-GS: Manifold-Conservative Gaussian Splatting with Realizability Certification
+
+中文副标： MC-GS：带可实现性认证的流形守恒高斯泼溅
+
+特点： MC-GS 顺口且直接对应论文核心。
+
+VarSplat: Conservative Discrete Geometric Measures for Surface-Aware Gaussian Splatting
+
+中文副标： VarSplat：面向曲面感知高斯泼溅的守恒离散几何测度
+
+特点： 将 Varifold（变流形测度）与 Splatting 融合成新词 VarSplat，学术极客感拉满。
+
+3. 核心洞察思辨流派（突出理论深度、直击痛点）
+论文第 5 节关于 Realizability vs. Identifiability（可实现性不等于可辨识性）的讨论非常惊艳，这是很多流形重建论文忽略的盲点，把它放进标题能极大提升论文的思辨深度。
+
+Beyond Realizability: Manifold-Conservative Gaussian Splatting and the Identifiability Ladder
+
+中文副标： 超越可实现性：流形守恒高斯泼溅与可辨识性阶梯
+
+特点： “Beyond Realizability” 极具启发性，审稿人一看就知道文章不是在盲目灌水刷榜，而是在做深刻的理论澄清。
+
+Is Thinness Enough? Conservative Varifolds and Realizability Certification for Gaussian Splatting
+
+中文副标： 变薄就够了吗？高斯泼溅中的守恒变流形与可实现性认证
+
+特点： 采用问句式开篇（“Is Thinness Enough?” 呼应引言中对现有方法只做 thin loss 的反思），针对性极强，非常吸引眼球。

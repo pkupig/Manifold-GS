@@ -88,7 +88,7 @@ backbone，不声称 watertight。
 - [x] 把几何质量 `q_i` 从渲染 opacity 中分离；
 - [x] 实现严格守恒的离散测度 split/merge 算子和单元测试；
 - [x] 将守恒质量传输接入官方 3DGS clone/split densification；
-- [ ] 在已有保质量 representation pruning 基础上，增加显式 semantic deletion ledger；
+- [x] 在已有保质量 representation pruning 基础上，增加显式 semantic deletion ledger；
 - [x] 生成固定的多 seed 实验 manifest、自动 PASS/FAIL 汇总和 GPU 命令；
 - [x] 实现 Gaussian→quadratic MLS→confidence graph→patch mesh→projected Gaussian PLY；
 - [x] 支持 `--mcgs_initial_ply` 从投影后的表示继续训练；
@@ -131,8 +131,141 @@ orientation。下一轮应增加 seed 数并加入 plane/torus；若只在 spher
 会把方法调成单场景结果。中文 framework 文档继续等 topology 路线和跨场景验证
 确定后再定稿。
 
-- [ ] 按冻结参数运行 `experiments/manifests/plane_torus_sparse_v1.json`；plane 与
+- [x] 按冻结参数运行 `experiments/manifests/plane_torus_sparse_v1.json`；plane 与
   torus 分场景报告 paired CI，不把两个不同难度的场景只汇总成一个数字。
+
+`plane_torus_sparse_v1` 已完成，结论为 `FAIL`。直接原因不是 pruning 或 held-out
+渲染崩坏，而是 compatibility 训练链路当时缺了理论对象里的 `shape match`
+主项：训练内只优化了 `support / tangent / symmetry / gauss`，没有直接优化
+`A_pred - A_support`。现在 `manifold_gs/training_hooks.py` 已新增
+`--mcgs_lambda_shape`，并把 `gauss` 比较改到 shape operator 层。下一轮协议为
+`experiments/manifests/plane_torus_sparse_v2_shape.json`，用更晚启用、较弱 symmetry
+和显式 shape-match 做复验。
+
+理论稳定性重构已开始，见 `THEORY-STABILITY.md`。当前已证明局部 graph 模型下
+`tangent/value + shape` 对“到可实现曲面集合的距离”具有 coercivity，并给出当前
+Gaussian position/tangent kernel-varifold 的 coupling 上界。非线性命题要求额外的
+chart 条件 `|n_cov dot n_support| >= gamma`；现有 MLS confidence 只衡量 support
+planarity / sampling anisotropy。现已统一训练 cache、offline compatibility 和 MLS
+projection 的 radius-normalized design，并在 compatibility 输出中增加
+`normal_alignment_abs_{p10,median}`、`linear_gram_min_{p10,median}` 和
+`quadratic_gram_min_{p10,median}`；全局尺度 `1e-3 / 1 / 1e3` 不变性测试已通过。
+下一步是把 angle/Gram margin 接入训练期 reject/weight 规则，并补 center
+errors-in-variables 与 kNN neighbor stability 界。现已加入默认关闭的
+`--mcgs_compatibility_alignment_floor` / `--mcgs_compatibility_gram_floor`，并证明
+`d_{k+1}-d_k>4 delta` 时 kNN 集合不变；offline 输出新增 normalized kNN gap 与
+PCA normal eigengap。下一步先从已有 checkpoint 重算这些 margin 以冻结阈值，再
+启用 gating 跑新实验，不再把 symmetry、Gauss、Codazzi 单独当作能推出 GT
+正确性的约束。
+
+Seed-0 旧 checkpoint 的只读 margin 重算表明：plane/torus 的
+`knn_gap_ratio_p10` 都只有约 `0.0014--0.0017`，所以严格 kNN 不变条件只允许
+约 `0.00035--0.00043` 个 neighborhood radius 的相对中心漂移；固定 100-step
+cache 很可能超出该范围。angle/Gram 的低分位在不同场景间相差明显，暂不冻结
+全局 hard threshold。训练现已记录 `mcgs_cache_drift_{mean,max}`，并支持默认关闭的
+drift-triggered refresh；下一步应用短机制校准测 drift 时间序列，而不是直接重跑
+完整 7k manifest。
+
+300-step sphere drift 校准已完成。固定 100-step cache 的 max drift 为 `0.10924`，
+`0.01` adaptive trigger 将其压到 `0.00996`，refresh `3 -> 31`，训练耗时约增加
+27%。adaptive 使 symmetry `0.21058 -> 0.18650`、shape mismatch
+`0.23274 -> 0.22991`、Codazzi `0.42354 -> 0.41432`，但 varifold 只从
+`0.096276 -> 0.096048`，normal 从 `9.49 deg` 退化到 `10.03 deg`。结论：stale
+cache 是 compatibility estimator 的真实问题，但不是 GT FAIL 的主因；暂不直接
+用 `0.01` 跑 7k，下一理论重点转向 realizable surface 内的数据可辨识性约束。
+
+数据可辨识性理论现已分解为两个可检验命题：对单视图可见 depth graph，`H1`
+depth error 可控制 position+tangent 进而控制 kernel-varifold；RGB-only 则必须假设
+去除 appearance gauge 后 multi-view rendering Jacobian 的最小奇异值 `beta>0`。
+现有 analytic 数据已经有 train-view depth/normal/mask，但当前训练未加载它们。
+`plane_torus_sparse_v2_shape` 的场景内相关性也显示 RGB 不是稳定几何代理：torus
+的 PSNR-varifold Spearman 为 `-0.067`，plane 为反方向的 `+0.633`。下一实验应先做
+RGB / mask-free-space / exact-depth-oracle 与是否加 compatibility 的诊断 ladder；
+oracle 只用于定位 H3b，不作为 sparse-RGB 方法结果。
+
+全局可辨识性还必须报告 train-camera union 的 GT visible-area coverage 与 model
+visible-mass coverage。理论上 normalized kernel-varifold 满足
+`MMD_global <= (1-eta) MMD_visible + 2 eta`；mask 只约束 silhouette 外部，depth
+只额外约束 first hit 之前的 free space，二者都不能排除 first hit 后面的重复层。
+因此下一步先实现 analytic GT visibility coverage evaluator，再决定 depth-oracle
+训练约束，不能用“3 views”替代真实 coverage。
+
+`scripts/evaluate_visibility_coverage.py` 已实现并接入 manifest evaluate stage。
+三 seed 结果：plane train-view union GT mass coverage 在所有容差均为 `100%`；
+torus 在 bbox depth tolerance `0.5% / 1%` 下约为 `49--50% / 53--54%`。因此
+torus FAIL 含有明确的 unseen-surface 不可辨识性，不能期待 compatibility 从 RGB
+恢复被遮挡的一半曲面；plane 已完全 first-hit covered，后续应在 plane 上优先审计
+photometric Jacobian/appearance gauge，并用 exact-depth oracle 判断 optimizer 与 RGB
+证据谁是瓶颈。
+
+300-step plane oracle ladder 已完成（无 densification）：RGB 的 certified
+Chamfer/normal/varifold 为 `0.03091 / 63.65 / 0.17021`；point-depth oracle 为
+`0.02785 / 63.71 / 0.16908`；compatibility 为
+`0.03089 / 23.33 / 0.11478`；oracle+compatibility 为
+`0.02768 / 24.65 / 0.11731`。结论：pointwise depth 只明显改善 support position，
+compatibility 在 densification 前确实大幅改善 tangent/varifold。7k plane 退化应
+定位到 densification、graph/cache 变化或后期 schedule，而不能再简单归因于 RGB
+不可辨识。
+
+1500-step densification 定位已完成。RGB / fixed compatibility / adaptive
+compatibility / oracle+adaptive 的 certified Chamfer 分别为
+`0.05946 / 0.05011 / 0.04537 / 0.01885`，normal 为
+`64.91 / 55.18 / 55.95 / 8.84 deg`，varifold 为
+`0.19335 / 0.15167 / 0.14614 / 0.06056`。adaptive 将 max cache drift 从
+`0.5623` 压到 `0.00996`，改善 symmetry、support、mesh 和 PSNR，但 RGB-only
+normal 仍未恢复；oracle+adaptive 同时显著恢复所有几何量。训练轨迹显示
+densification 后 RGB-only shape term 升到 `1.3--1.6`，oracle 下保持约
+`0.5--0.7`。结论：stale cache 是次要问题，主因是 refinement 增加自由度后缺少
+data-coercive support anchor。下一步不是继续加 compatibility 权重，而是测试带噪
+depth/normal/free-space 约束，确认从 exact oracle 到现实几何先验的退化曲线。
+
+1500-step noisy-depth sweep 已完成。噪声 `0.5% / 1% / 2% / 5%` 的
+Chamfer 为 `0.02864 / 0.02645 / 0.03096 / 0.04685`，normal 为
+`17.21 / 21.20 / 36.17 / 54.38 deg`，varifold 为
+`0.07522 / 0.08452 / 0.11355 / 0.14113`。`<=2%` 仍明显优于 RGB adaptive
+baseline (`0.04537 / 55.95 / 0.14614`)；`5%` 基本退回 baseline。certified mass
+随噪声从 exact `77.0%` 降至 `25.4%`，是最敏感 guardrail。下一步现实路线应以
+约 `1%` 深度精度为目标，并测试 structured scale/bias、边缘错误和 dropout；不能
+把 iid Gaussian noise 结果直接等同于 monocular depth。
+
+Structured depth audit 已完成。2% scale/bias 的 normal 仍为
+`15.32 / 14.69 deg`，shape mismatch 为 `0.41555 / 0.40406`，但 Chamfer
+`0.04950 / 0.04656` 和 mesh Chamfer `0.04169 / 0.04144` 已略差于 RGB adaptive
+support，验证“错误但可实现曲面”null space。2% low-frequency warp 仍有部分收益
+(`0.03347 / 26.63 / 0.10309`)；30% dropout 与 combined 基本退回或差于 RGB
+baseline。下一实现优先级：用 SfM/初始 centers 对每视图 depth 做 affine
+scale+shift calibration，并把 missing-depth coverage 显式并入权重/拒绝规则；不能
+依赖 compatibility 自己纠正 coherent depth bias。
+
+已实现基于固定初始 SfM centers 的 per-view robust affine depth calibration：首次
+加载深度时拟合 `z_center ~= a * depth_prior + b`，迭代裁掉大残差，之后冻结
+`a,b`。2% scale-error 的 10-step 接口校验得到三个视图约
+`a=0.961--0.966, b=0.036--0.048`，组合映射在实际 depth range 内恢复正确标尺；
+不能单看 `a`，因为窄 depth range 下 scale/shift 高相关。下一轮比较 calibrated
+scale/bias 与未校准结果，并测试 combined error 中只能消除 affine 分量的边界。
+
+Affine calibration 1500-step 结果已完成：2% scale 从
+`0.04950 / 15.32 / 0.08997` 恢复到 `0.01700 / 10.14 / 0.05863`；2% bias 从
+`0.04656 / 14.69 / 0.08926` 恢复到 `0.02038 / 11.00 / 0.06550`，接近 exact。
+同时发现旧 dropout/combined 的 bilinear sampler 会把 missing zero 混成浅深度；
+已改成 validity-normalized interpolation，旧两项结果作废，只重跑三个修正版。
+
+Mask-normalized rerun 已完成。30% dropout 的 Chamfer/normal/varifold 为
+`0.01806 / 11.98 / 0.06652`，接近 exact，证明旧失败完全由 zero-depth 插值污染
+造成。Combined 修复后为 `0.03456 / 28.63 / 0.10205`；再加 affine calibration
+为 `0.03424 / 28.20 / 0.09781`，coverage `54.0% -> 57.0%`，mesh Chamfer
+`0.01895 -> 0.01358`，PSNR `30.47 -> 31.20`。结论：随机 missing 本身在三视图
+冗余下可承受；剩余瓶颈是 low-frequency/iid structured residual，而非 dropout。
+下一阶段应转向真实或模拟 monocular confidence/edge-correlated error，不再扫描
+独立像素 dropout。
+
+训练输出目录现在会额外写出 `geom_mass_prune_ledger.json`，记录每次 pruning 的：
+
+- iteration；
+- pruned points / pruned mass；
+- 是否启用保质量传输；
+- transport cost；
+- 分原因统计：`low_opacity`、`big_screen_radius`、`big_world_scale`。
 
 长跑交接命令（支持中断后原命令恢复）：
 

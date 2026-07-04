@@ -114,7 +114,7 @@ refinement laws. This is distinct in scene reconstruction but adjacent to
 flagfolds and Topo-GS. Keep it as an extension unless thin structures become the
 central benchmark.
 
-## 4. Revised oral-level thesis
+## 4. Revised target thesis (not a claim achieved by current evidence)
 
 > Existing geometry-aware splatting estimates local normals and curvature, but
 > does not guarantee that adaptive splats represent a refinement-invariant
@@ -137,11 +137,14 @@ Mass conservation alone is probably insufficient for an oral paper.
 
 ## 5. Claims allowed today
 
+Current authoritative wording is maintained in `CLAIM-EVIDENCE-ZH.md`; this
+dated audit must not be used to override newer failed or conditional results.
+
 - "We formulate a refinement-conservative discrete geometric measure for GS."
 - "We prove a conditional forward consistency bound."
 - "Our prototype exactly preserves geometric mass through clone/split."
-- "Our offline projection improves analytic geometry and exports reloadable
-  surface-aligned Gaussians and open patches."
+- "Our offline projection exports reloadable surface-aligned Gaussians and open
+  patches; geometry gains are protocol- and seed-dependent."
 
 ## 6. Claims not allowed today
 
@@ -162,4 +165,3 @@ Mass conservation alone is probably insufficient for an oral paper.
 - 2DGS: https://arxiv.org/abs/2403.17888
 - Point-cloud varifold approximation: https://arxiv.org/abs/1609.03625
 - Neural Varifolds: https://arxiv.org/abs/2407.04844
-

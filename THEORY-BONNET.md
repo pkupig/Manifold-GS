@@ -142,12 +142,67 @@ theory alone does not settle it.
 > the Gauss and Codazzi-Mainardi equations determine an immersion realizing them,
 > unique up to a rigid motion of `R^3`.
 
-Hence `rho -> 0` with `I` from `A_support`'s metric and `II = A_pred` symmetric
-and Gauss/Codazzi-consistent **certifies that the learned `(P, N)` pair is, in
-each chart, the data of an actual smooth surface, pinned up to rigid motion.**
-This upgrades "the normals look consistent" to "the fields are Bonnet-realizable
-by one surface." Reference: do Carmo, *Differential Geometry of Curves and
+Hence, in the exact continuum setting, `rho = 0` with `I` from
+`A_support`'s metric and `II = A_pred` symmetric and Gauss/Codazzi-consistent
+certifies that `(I, II)` is locally realizable by an immersion, up to rigid
+motion. A small residual computed on a finite kNN graph is not by itself such a
+certificate: using it quantitatively requires a stability estimate for the
+discretization. Reference: do Carmo, *Differential Geometry of Curves and
 Surfaces*, Ch. 4.
+
+### 3.4 The missing stability bridge to ground truth
+
+Bonnet is an existence and uniqueness theorem for prescribed fundamental
+forms. It does not say that the realized surface is the scene ground truth,
+that sparse-view optimization reaches it, or that a fixed percentage gain in
+Chamfer or kernel-varifold distance follows. Those conclusions require two
+additional stability statements.
+
+Let `Z` be the set of admissible discrete fields that are realizable by a
+surface in a regularity class `A` (bounded curvature, positive reach, density
+bounds, and fixed gauge). Let `D(V)` be the discrete compatibility defect and
+`d_V` a varifold metric. The first required estimate is a quantitative Bonnet
+error bound
+
+```math
+dist_{d_V}(V,Z) <= C_B (D(V) + epsilon_disc).
+```
+
+Here `epsilon_disc` contains finite sampling, MLS, graph, and quadrature errors.
+This estimate is not supplied by the classical fundamental theorem of surface
+theory and is not yet proved for our estimator.
+
+Let `R` be the image-formation operator restricted to `Z`. The second required
+assumption is stable identifiability on the chosen scene/camera class:
+
+```math
+d_V(U,V_*) <= C_R ||R(U)-R(V_*)||,  U in Z,
+```
+
+where `V_*` is the GT surface varifold. This is false for unrestricted
+sparse-view scenes because of occlusion, texture ambiguity, duplicate sheets,
+and unseen geometry. It can only hold after explicitly restricting the scene
+class or adding depth, masks, free-space, or visibility conditions.
+
+If both estimates hold and `R` is `L_R`-Lipschitz near `Z`, projecting `V` to a
+nearest `Pi_Z V` and applying the triangle inequality gives
+
+```math
+d_V(V,V_*)
+<= C_R ||R(V)-R(V_*)||
+ + (1 + C_R L_R) C_B (D(V) + epsilon_disc).
+```
+
+This is the correct route from compatibility to an evaluation metric. It also
+shows why compatibility alone cannot recover GT: it controls the second term,
+while photometric/visibility evidence must control the first. A registered
+`20%` relative improvement is an empirical decision threshold, not a corollary
+of this bound unless usable constants and a baseline lower bound are also
+established.
+
+The local graph version, including an exact linearized coercivity proposition
+and the null spaces of derivative-only losses, is developed in
+`THEORY-STABILITY.md`.
 
 ---
 

@@ -39,7 +39,8 @@ def main() -> None:
     manifest_path = Path(args.manifest).resolve()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     benchmark = ROOT / "experiments" / "benchmarks" / manifest["name"]
-    data_root = benchmark / "data"
+    data_benchmark = manifest.get("dataset_benchmark", manifest["name"])
+    data_root = ROOT / "experiments" / "benchmarks" / data_benchmark / "data"
     run_root = benchmark / "runs"
     scenes = [s for s in manifest["scenes"] if args.scene is None or s in args.scene]
     seeds = [s for s in manifest["seeds"] if args.seed is None or s in args.seed]
@@ -73,6 +74,16 @@ def main() -> None:
                     outputs=(data_dir / "gt" / "metadata.json", data_dir / "sparse" / "0" / "test.txt"),
                     resume=args.resume,
                 )
+
+            if "evaluate" in stages:
+                run([
+                    sys.executable, "scripts/evaluate_visibility_coverage.py",
+                    "--data", str(data_dir),
+                    "--out", str(data_dir / "gt" / "train_visibility_coverage.json"),
+                    "--split", "train",
+                ], args.dry_run, outputs=(
+                    data_dir / "gt" / "train_visibility_coverage.json",
+                ), resume=args.resume)
 
             for method, method_args in methods.items():
                 output = run_root / f"{scene}_s{seed}_{method}"

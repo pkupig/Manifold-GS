@@ -75,8 +75,9 @@ See `THEORY-PROOF-SKETCH.md` for the proof boundary and
 The current positioning is audited in
 `THEORY-NOVELTY-REAUDIT-2026-06-27.md`; broad first-manifold/varifold/topology
 claims are explicitly rejected.
-The proposed oral-level differentiator and its current diagnostics are specified
-in `FUNDAMENTAL-COMPATIBILITY.md`.
+The proposed theoretical differentiator and its current diagnostics are specified
+in `FUNDAMENTAL-COMPATIBILITY.md`. The authoritative current claim boundary is
+`CLAIM-EVIDENCE-ZH.md`; the present evidence does not justify an oral-level claim.
 
 ## Why this may still be novel
 
@@ -91,7 +92,7 @@ The proposed angle is different:
 
 > 2DGS makes individual splats local surface elements; this project asks whether the whole splat set satisfies global manifold, area-measure, normal-integrability, and topology-consistency conditions.
 
-## Main contributions to target
+## Main contributions to target (not all empirically established)
 
 1. **Manifold interpretation of Gaussian splats**
    - Convert covariance eigensystems into tangent planes, normals, area weights, and dimensionality labels.

@@ -22,6 +22,11 @@ class FundamentalCompatibility:
     codazzi_residual_scaled: np.ndarray
     planarity: np.ndarray
     radii: np.ndarray
+    normal_alignment_abs: np.ndarray
+    linear_gram_min: np.ndarray
+    quadratic_gram_min: np.ndarray
+    knn_gap_ratio: np.ndarray
+    normal_eigengap_ratio: np.ndarray
 
 
 def _weighted_lstsq(design: np.ndarray, values: np.ndarray, weights: np.ndarray) -> np.ndarray:
@@ -53,10 +58,15 @@ def compute_fundamental_compatibility(
     mass = np.ones(count, dtype=np.float64) if mass is None else np.asarray(mass, dtype=np.float64).reshape(-1)
     source = np.arange(count, dtype=np.int64) if source_indices is None else np.asarray(source_indices, dtype=np.int64)
 
-    k_eff = min(max(k, 8) + 1, count)
-    distances, neighbors_full = cKDTree(xyz).query(xyz, k=k_eff)
-    neighbors = neighbors_full[:, 1:]
-    radii = distances[:, -1]
+    neighbor_count = min(max(k, 8), count - 1)
+    query_count = min(neighbor_count + 2, count)
+    distances, neighbors_full = cKDTree(xyz).query(xyz, k=query_count)
+    neighbors = neighbors_full[:, 1:neighbor_count + 1]
+    radii = distances[:, neighbor_count]
+    if query_count > neighbor_count + 1:
+        knn_gap_ratio = (distances[:, neighbor_count + 1] - radii) / np.maximum(radii, 1e-12)
+    else:
+        knn_gap_ratio = np.zeros(count, dtype=np.float64)
 
     support_normals = np.zeros_like(xyz)
     support_shape = np.zeros((count, 2, 2), dtype=np.float64)
@@ -69,6 +79,10 @@ def compute_fundamental_compatibility(
     gauss = np.zeros(count, dtype=np.float64)
     normal_curl = np.zeros(count, dtype=np.float64)
     planarity = np.zeros(count, dtype=np.float64)
+    normal_alignment_abs = np.zeros(count, dtype=np.float64)
+    linear_gram_min = np.zeros(count, dtype=np.float64)
+    quadratic_gram_min = np.zeros(count, dtype=np.float64)
+    normal_eigengap_ratio = np.zeros(count, dtype=np.float64)
 
     for i in range(count):
         ids = np.concatenate(([i], neighbors[i]))
@@ -80,6 +94,7 @@ def compute_fundamental_compatibility(
         centered = delta - weighted_center
         covariance = (weights[:, None] * centered).T @ centered
         eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+        normal_eigengap_ratio[i] = (eigenvalues[1] - eigenvalues[0]) / max(eigenvalues.sum(), 1e-16)
         n0 = eigenvectors[:, 0]
         if np.dot(n0, predicted_normals[i]) < 0:
             n0 *= -1.0
@@ -87,10 +102,13 @@ def compute_fundamental_compatibility(
         t2 = np.cross(n0, t1)
         t2 /= max(np.linalg.norm(t2), 1e-12)
         u, v, height = delta @ t1, delta @ t2, delta @ n0
-        design2 = np.column_stack([np.ones(len(ids)), u, v, 0.5 * u * u, u * v, 0.5 * v * v])
+        su, sv = u / radius, v / radius
+        design2 = np.column_stack([np.ones(len(ids)), su, sv, 0.5 * su * su, su * sv, 0.5 * sv * sv])
+        weighted_design2 = design2 * np.sqrt(weights)[:, None]
+        quadratic_gram_min[i] = max(float(np.linalg.eigvalsh(weighted_design2.T @ weighted_design2)[0]), 0.0)
         coeff = _weighted_lstsq(design2, height, weights)
-        gradient = coeff[1:3]
-        hessian = np.array([[coeff[3], coeff[4]], [coeff[4], coeff[5]]])
+        gradient = coeff[1:3] / radius
+        hessian = np.array([[coeff[3], coeff[4]], [coeff[4], coeff[5]]]) / (radius * radius)
         parametric_basis = np.column_stack([t1 + gradient[0] * n0, t2 + gradient[1] * n0])
         metric = parametric_basis.T @ parametric_basis
         metric_inv = np.linalg.inv(metric)
@@ -107,9 +125,11 @@ def compute_fundamental_compatibility(
         signs = np.sign(local_predicted @ predicted_normals[i])
         signs[signs == 0] = 1.0
         local_predicted *= signs[:, None]
-        design1 = np.column_stack([np.ones(len(ids)), u, v])
+        design1 = np.column_stack([np.ones(len(ids)), su, sv])
+        weighted_design1 = design1 * np.sqrt(weights)[:, None]
+        linear_gram_min[i] = max(float(np.linalg.eigvalsh(weighted_design1.T @ weighted_design1)[0]), 0.0)
         normal_coeff = _weighted_lstsq(design1, local_predicted, weights)
-        normal_derivatives = np.column_stack([normal_coeff[1], normal_coeff[2]])
+        normal_derivatives = np.column_stack([normal_coeff[1], normal_coeff[2]]) / radius
         predicted_second = -normal_derivatives.T @ parametric_basis
         predicted_s = metric_inv @ predicted_second
 
@@ -124,7 +144,8 @@ def compute_fundamental_compatibility(
         support_shape[i] = tangent.T @ (parametric_basis @ support_s @ metric_inv @ parametric_basis.T) @ tangent
         predicted_shape[i] = tangent.T @ ambient_s @ tangent
         ambient_predicted_shape[i] = ambient_s
-        normal_angle[i] = np.degrees(np.arccos(np.clip(abs(float(fitted_normal @ predicted_normals[i])), 0.0, 1.0)))
+        normal_alignment_abs[i] = np.clip(abs(float(fitted_normal @ predicted_normals[i])), 0.0, 1.0)
+        normal_angle[i] = np.degrees(np.arccos(normal_alignment_abs[i]))
         scale = np.linalg.norm(support_shape[i]) + 1.0 / radius
         shape_relative[i] = np.linalg.norm(predicted_shape[i] - support_shape[i]) / max(scale, 1e-12)
         symmetry[i] = np.linalg.norm(predicted_second - predicted_second.T) / max(np.linalg.norm(predicted_second), 1.0 / radius)
@@ -135,7 +156,7 @@ def compute_fundamental_compatibility(
         q = -(local_predicted @ t2) / denominator
         p_coeff = _weighted_lstsq(design1, p, weights)
         q_coeff = _weighted_lstsq(design1, q, weights)
-        normal_curl[i] = abs(p_coeff[2] - q_coeff[1]) * radius
+        normal_curl[i] = abs(p_coeff[2] - q_coeff[1])
         planarity[i] = eigenvalues[0] / max(eigenvalues.sum(), 1e-16)
 
     codazzi = np.zeros(count, dtype=np.float64)
@@ -144,16 +165,19 @@ def compute_fundamental_compatibility(
         frame = tangent_frames[i]
         uv = (xyz[ids] - xyz[i]) @ frame
         radius = max(radii[i], 1e-12)
+        scaled_uv = uv / radius
         weights = np.exp(-np.sum(uv * uv, axis=1) / (radius * radius)) * np.maximum(mass[ids], 1e-16)
         weights /= max(np.sum(weights), 1e-16)
         transported = np.stack([frame.T @ ambient_predicted_shape[j] @ frame for j in ids])
         transported = 0.5 * (transported + transported.transpose(0, 2, 1))
-        design = np.column_stack([np.ones(len(ids)), uv])
+        design = np.column_stack([np.ones(len(ids)), scaled_uv])
         coeff11 = _weighted_lstsq(design, transported[:, 0, 0], weights)
         coeff12 = _weighted_lstsq(design, transported[:, 0, 1], weights)
         coeff22 = _weighted_lstsq(design, transported[:, 1, 1], weights)
         residual = np.array([coeff11[2] - coeff12[1], coeff12[2] - coeff22[1]])
-        codazzi[i] = np.linalg.norm(residual) * radius * radius
+        # Coefficients differentiate with respect to u/r; one remaining radius
+        # makes the Codazzi residual dimensionless.
+        codazzi[i] = np.linalg.norm(residual) * radius
 
     return FundamentalCompatibility(
         source_indices=source,
@@ -168,6 +192,11 @@ def compute_fundamental_compatibility(
         codazzi_residual_scaled=codazzi.astype(np.float32),
         planarity=planarity.astype(np.float32),
         radii=radii.astype(np.float32),
+        normal_alignment_abs=normal_alignment_abs.astype(np.float32),
+        linear_gram_min=linear_gram_min.astype(np.float32),
+        quadratic_gram_min=quadratic_gram_min.astype(np.float32),
+        knn_gap_ratio=knn_gap_ratio.astype(np.float32),
+        normal_eigengap_ratio=normal_eigengap_ratio.astype(np.float32),
     )
 
 
@@ -185,5 +214,14 @@ def summarize_compatibility(result: FundamentalCompatibility) -> dict[str, float
         values = getattr(result, name)
         summary[f"{name}_median"] = float(np.median(values))
         summary[f"{name}_p90"] = float(np.quantile(values, 0.9))
+    for name in (
+        "normal_alignment_abs",
+        "linear_gram_min",
+        "quadratic_gram_min",
+        "knn_gap_ratio",
+        "normal_eigengap_ratio",
+    ):
+        values = getattr(result, name)
+        summary[f"{name}_p10"] = float(np.quantile(values, 0.1))
+        summary[f"{name}_median"] = float(np.median(values))
     return summary
-
