@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import sys
 
+from dtu_official_layout import ensure_dtu_official_layout
 
 ROOT = Path(__file__).resolve().parents[1]
 EVAL = ROOT / "third_party/2d-gaussian-splatting/scripts/eval_dtu/evaluate_single_scene.py"
@@ -49,6 +50,7 @@ def main() -> None:
     data_root = Path(protocol["data_root"])
     output_root = Path(protocol["output_root"]) / protocol["name"]
     official_root = Path(protocol["official_gt_root"])
+    ensure_dtu_official_layout(official_root)
     stages = {args.stage} if args.stage != "all" else {"train", "evaluate"}
 
     manifold_args = [

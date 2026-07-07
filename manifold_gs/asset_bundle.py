@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .mesh_io import read_triangle_mesh_ply, write_grouped_obj, write_triangle_mesh_ply
+from .observation_evidence import aggregate_patch_evidence
 from .ply_io import read_vertex_ply, write_vertex_ply_data
 
 
@@ -45,6 +46,14 @@ def export_asset_bundle(
     collision_min_faces: int = 8,
     gaussian_source_map_npz: str | Path | None = None,
     collision_max_patch_diameter_ratio: float = 3.0,
+    observation_evidence_npz: str | Path | None = None,
+    min_observation_supported_fraction: float = 0.5,
+    min_observation_training_views: int = 0,
+    min_observation_parallax_deg: float = 0.0,
+    min_observation_first_hit_views: int = 0,
+    max_observation_photometric_std: float = float("inf"),
+    max_observation_photometric_std_percentile: float | None = None,
+    min_observation_photometric_views: int = 0,
 ) -> dict[str, object]:
     """Write mesh, attached/residual splats, mappings, and a JSON manifest."""
     output_dir = Path(output_dir)
@@ -73,10 +82,30 @@ def export_asset_bundle(
     residual_mask[attached_indices] = False
     residual_indices = np.flatnonzero(residual_mask)
 
+    # Patch id per attached Gaussian (aligned with attached_indices) so downstream
+    # edit propagation can bind Gaussians to patches without re-deriving the mapping.
+    patch_by_row: dict[int, int] = {}
+    for source_id, patch_id in zip(source_indices, patch_ids):
+        patch_by_row.setdefault(row_by_source[int(source_id)], int(patch_id))
+    attached_patch_ids = np.asarray([patch_by_row[row] for row in attached_indices], dtype=np.int32)
+
     write_vertex_ply_data(output_dir / "attached_gaussians.ply", gaussian_data[attached_indices])
     write_vertex_ply_data(output_dir / "residual_gaussians.ply", gaussian_data[residual_indices])
     write_triangle_mesh_ply(output_dir / "certified_patches.ply", vertices, faces)
     write_grouped_obj(output_dir / "certified_patches.obj", vertices, faces, patch_ids)
+
+    evidence = None
+    if observation_evidence_npz is not None:
+        evidence = aggregate_patch_evidence(
+            observation_evidence_npz, source_indices, patch_ids,
+            min_supported_fraction=min_observation_supported_fraction,
+            min_training_views=min_observation_training_views,
+            min_parallax_deg=min_observation_parallax_deg,
+            min_first_hit_views=min_observation_first_hit_views,
+            max_photometric_std=max_observation_photometric_std,
+            max_photometric_std_percentile=max_observation_photometric_std_percentile,
+            min_photometric_views=min_observation_photometric_views,
+        )
 
     # A conservative collision candidate keeps only sufficiently supported patches.
     face_patch = np.asarray(
@@ -89,6 +118,11 @@ def export_asset_bundle(
     ])
     median_diameter = float(np.median(patch_diameters)) if patch_diameters.size else 0.0
     supported = patch_face_counts >= collision_min_faces
+    if evidence is not None:
+        observation_by_patch = dict(zip(
+            map(int, evidence["patch_ids"]), map(bool, evidence["observationally_supported"])
+        ))
+        supported &= np.asarray([observation_by_patch.get(int(p), False) for p in unique_patch])
     scale_valid = patch_diameters <= collision_max_patch_diameter_ratio * max(median_diameter, 1e-12)
     retained_patch = unique_patch[supported & scale_valid]
     rejected_scale_patch = unique_patch[supported & ~scale_valid]
@@ -103,9 +137,14 @@ def export_asset_bundle(
         attached_source_indices=gaussian_source_ids[attached_indices],
         residual_source_indices=gaussian_source_ids[residual_indices],
         attached_row_indices=attached_indices,
+        attached_patch_ids=attached_patch_ids,
         residual_row_indices=residual_indices,
         collision_patch_ids=retained_patch,
         collision_scale_rejected_patch_ids=rejected_scale_patch,
+        observation_rejected_patch_ids=(
+            evidence["patch_ids"][~evidence["observationally_supported"]]
+            if evidence is not None else np.empty((0,), dtype=np.int32)
+        ),
     )
     topology = mesh_topology_statistics(faces)
     collision_topology = mesh_topology_statistics(collision_faces)
@@ -124,6 +163,42 @@ def export_asset_bundle(
         "collision_vertices": int(collision_vertices.shape[0]),
         "collision_patches": int(retained_patch.size),
         "collision_scale_rejected_patches": [int(x) for x in rejected_scale_patch],
+        "observation_certificate": "sparse_support_v1" if evidence is not None else "not_provided",
+        "observationally_supported_patches": (
+            int(evidence["observationally_supported"].sum()) if evidence is not None else None
+        ),
+        "observation_rejected_patches": (
+            [int(x) for x in evidence["patch_ids"][~evidence["observationally_supported"]]]
+            if evidence is not None else []
+        ),
+        "patch_evidence": (
+            [
+                {
+                    "patch_id": int(p),
+                    "sparse_supported_fraction": float(f),
+                    "median_normalized_sparse_distance": float(d),
+                    "observationally_supported": bool(a),
+                    "reject_reason": str(r),
+                    **({
+                        "median_training_view_count": float(evidence["median_training_view_count"][i]),
+                        "median_max_parallax_deg": float(evidence["median_max_parallax_deg"][i]),
+                        "median_projection_radius_px": float(evidence["median_projection_radius_px"][i]),
+                    } if "median_training_view_count" in evidence else {}),
+                    **({
+                        "median_first_hit_view_count": float(evidence["median_first_hit_view_count"][i]),
+                    } if "median_first_hit_view_count" in evidence else {}),
+                    **({
+                        "median_photometric_std": float(evidence["median_photometric_std"][i]),
+                        "median_photometric_view_count": float(evidence["median_photometric_view_count"][i]),
+                    } if "median_photometric_std" in evidence else {}),
+                }
+                for i, (p, f, d, a, r) in enumerate(zip(
+                    evidence["patch_ids"], evidence["sparse_supported_fraction"],
+                    evidence["median_normalized_sparse_distance"],
+                    evidence["observationally_supported"], evidence["reject_reason"],
+                ))
+            ] if evidence is not None else []
+        ),
         "patch_diameter_median": median_diameter,
         **topology,
         "collision_nonmanifold_edges": collision_topology["nonmanifold_edges"],

@@ -26,6 +26,16 @@ Asset bundle 的 CPU 导出链路已完成，无需你操作。当前 sphere see
 OBJ/PLY、attached/residual Gaussian PLY、collision candidate、source mapping 和
 manifest。下一缺口是人工 DCC 导入验证与可量化编辑任务。
 
+Observation evidence（P0.1）CPU 部分进度（2026-07-06，Codex 完成，无需你操作）：
+在 sparse-support 与 frustum view/parallax/footprint 之上，新增了**遮挡感知 first-hit
+可见性**（`compute_visibility_evidence`：以点云自身为遮挡体、按像素分箱求首次命中深度），
+把原来的 `frustum_no_occlusion` 升级为 `first_hit_occlusion`，并给 patch 聚合加了
+`insufficient_first_hit_visibility` 拒绝理由与 `--min-observation-first-hit-views` 门限。
+已有 CPU 单测覆盖。**仍未完成**的三项——多视 photometric 一致性、restricted rendering
+Fisher/Jacobian 证书、以及下游 asset benchmark——需要 GPU/图像/训练，见 Action A2--A5。
+在这三项闭环前，当前 cache 仍只能叫 realizability + 几何观测支持，不得称完整
+identifiability certificate。
+
 ## Action A1：Blender 导入与人工完整性检查（待执行，低算力/需 GUI）
 
 **目的：**确认标准 OBJ/PLY 能被真实 DCC 工具读取，patch 分组、开放边界和 collision
@@ -64,13 +74,122 @@ mesh simplification、编辑传播和 collision proxy 对照，会占 GPU/磁盘
 当前 exporter 刚完成，指标与命令尚未冻结，**现在不要运行任何新训练或批量导出**。
 我会先完成以下低成本工作：
 
-- 自动 edit propagation metric；
-- collision candidate 的 coverage/false-surface metric；
+- 自动 edit propagation metric（**已完成 2026-07-07**：`manifold_gs/edit_metrics.py` +
+  `scripts/evaluate_edit_propagation.py`，把 patch 编辑经 source mapping 传播后测
+  edit error / boundary leakage / residual contamination，并直接对比 certified patch
+  binding 与 nearest-radius baseline；exporter 现额外写 `attached_patch_ids` 使 mapping
+  自描述。合成 GT 单测已证明 certified 零泄漏、baseline 跨边界泄漏。真实场景/DCC 人工
+  协议归 A5/P0.3）；
+- collision candidate 的 coverage/false-surface metric（**已完成 2026-07-07**：
+  `manifold_gs/collision_metrics.py` + `scripts/evaluate_collision_candidate.py`，含
+  supported coverage、floater/false surface area、Hausdorff/normal error、false/missed
+  collision 与 unknown-marked-free 比例，已有 CPU 单测；真实场景运行需 GT + probe 文件，
+  见 A5/P0.4）；
 - OBJ round-trip 与 source mapping 测试；
 - manifest schema 和论文表格生成器。
 
 完成后会把唯一可复制命令、预计时长/显存/磁盘、输出目录和 PASS/FAIL 规则补到本项，
 再交给你执行。
+
+## Action A3：多视 photometric 一致性 evidence（不要执行，等 Codex 冻结脚本）
+
+**目的：**补齐 P0.1 证书里 first-hit 可见性之外的“被观测支持”一环——一个 patch 不仅要被
+若干训练相机的 first-hit 看到，其在这些相机里的重投影颜色还必须互相一致。这才能挡住
+“几何位置像曲面、但没有任何一致外观支撑”的 floater。
+
+**CPU 分量已完成（2026-07-07，Codex）：**`manifold_gs/observation_evidence.py` 新增
+`compute_photometric_evidence`（对 first-hit 可见点在各视图采样投影像素颜色、Welford 累计
+跨视图 RGB 方差，<2 视图记 +inf）；cache schema 加 `photometric_std` / `photometric_view_count`
+/ `photometric_mean_color`；patch 聚合与 exporter 加 `max_photometric_std` /
+`min_photometric_views` 门限与 `inconsistent_photometry` / `insufficient_photometric_views`
+拒绝理由；已有合成图单测。
+
+**待你执行（真实 DTU 场景，需读全部训练原图）：**在已有 scan105 evidence 的场景上补跑
+photometric 分量：
+
+```bash
+cd /root/autodl-tmp/E-Manifold-GS
+python scripts/build_observation_evidence.py \
+  --gaussians <scan105 matched vanilla 7k 的 point_cloud.ply> \
+  --colmap-points <scan105 sparse points3D.ply> \
+  --scene <scan105 COLMAP 场景根，含 sparse/0/*.txt> \
+  --images <scan105 训练图像目录> \
+  --out experiments/.../scan105_evidence_photometric.npz
+```
+
+输出的 `photometric_multiview_fraction` 与 `photometric_std` 分布回填 `RESULTS-LATEST.md`。
+**阈值仍需冻结**：先看 std 分布再定 `--max-observation-photometric-std`，不要凭空取值；
+NCC 窗口/双线性采样/遮挡容差等更强口径留待冻结后再加。IO 偏重（读全部训练图），故列此。
+
+**最终状态：已完成（2026-07-08，Codex 直接跑，非 GPU）。** 该脚本实为 CPU/IO（迁到 3090
+后本地数据齐全，14s 完成），故由 Codex 直接执行，无需你操作。scan105 `_vanilla_matched`
+7k：102,783 gaussians、56 训练视图、photometric_multiview_fraction **0.9998**、std 中位
+0.077 / p90 0.150 / p95 0.194。输出 `experiments/observation_evidence/scan105_photometric.npz`。
+分布与阈值讨论已回填 `RESULTS-LATEST.md` §4.2。
+
+**阈值口径已定（2026-07-08，用户选"每场景相对百分位"）：**不冻结绝对值，photometric
+一致性门限改为**每场景相对百分位**。已实现 `aggregate_patch_evidence(
+max_photometric_std_percentile=...)` 与 exporter 的
+`--max-observation-photometric-std-percentile`（例：90 = reject 本场景 std 最差 10%
+的 patch），从本场景 finite per-patch median std 现算 cap，与绝对 cap 取 min，结果写
+`photometric_std_threshold` / `photometric_std_percentile` 供审计；+inf（<2 视图）patch
+恒拒。有单测（含跨场景尺度自适应验证）。这样跨 scan 无需重定数值、也避免单场景过拟合。
+**已端到端生效（2026-07-08）：**用 scan105 既有投影产物导出了首个真实场景 hybrid bundle
+（`.../scan105_vanilla_matched/hybrid_asset/`），observation gate 首次真实作用：402 patches
+中 accepted 234、insufficient_sparse_support 139、**inconsistent_photometry（相对 p90）29**。
+同一 bundle 上验证 texture 颜色源：多视 `photometric_mean_color` 相对 SH-DC 把 seam 从
+12.50 提到 18.36 dB（+5.86），但两者 baked seam 都 ≈ raw-color ceiling，证实剩余 seam 是
+真实跨边界颜色方差、共享 atlas 修不动。完整表见 `RESULTS-LATEST.md` §4.3。
+
+## Action A4：restricted rendering Fisher/Jacobian 证书（不要执行，协议未冻结）
+
+**目的：**P0.1 第二版要求——估计 patch 的局部几何方向是否真的被 RGB 约束，即在受限渲染下
+计算 Jacobian/Fisher information 的最小特征值。视图再多，若该方向对光度几乎无梯度，则该
+几何自由度未被识别，应报低置信度而非“已识别 asset”。
+
+**为什么现在不能跑：**需要可微渲染反传每 patch 的局部扰动，GPU 成本高且数值口径
+（扰动基、正则、特征值归一化）未冻结。Codex 先在小合成场景把 Jacobian 累积与最小特征值
+估计写成可测函数并给单测，再冻结真实场景命令。**现在不要在真实场景上跑任何 Fisher 扫描。**
+
+**预期产物（冻结后）：**per-patch `min_fisher_eigenvalue` / `identified_directions`；主张口径从
+“realizability-aware extraction”升级为“identified asset”的证据表。
+
+## Action A5：下游 asset 任务 benchmark（P0.3/P0.4/P0.5，不要执行，协议未冻结）
+
+**目的：**用可量化任务证明 hybrid asset 有用，而不只是能导出。三条线：
+
+- **P0.3 编辑**：对选定 patch 施加刚性/非刚性形变，经 source mapping 更新绑定 Gaussian，
+  测 target-region edit error、boundary leakage、residual contamination；对照 vanilla 最近邻、
+  Poisson mesh、SuGaR binding 与本文 certified binding。至少一个合成有 GT + 一个真实人工协议。
+- **P0.4 碰撞/未知空间**：报告 supported surface coverage、floater 面积、false/missed collision、
+  简化后 Hausdorff/normal error、未知区域是否被误判为 free space。
+- **P0.5 纹理 round-trip**：UV/chart atlas 或逐 patch 烘焙，报告 baking reprojection error、
+  seam error、round-trip 后 PSNR/SSIM，以及 mesh-only / mesh+splat / hybrid 的质量-大小-速度 Pareto。
+
+**CPU 度量前置已完成（2026-07-07，Codex）：**三条线的 CPU 度量与脚本都已就绪且有单测——
+P0.3 `manifold_gs/edit_metrics.py` + `scripts/evaluate_edit_propagation.py`；
+P0.4 `manifold_gs/collision_metrics.py` + `scripts/evaluate_collision_candidate.py`；
+P0.5 `manifold_gs/texture_metrics.py` + `scripts/evaluate_texture_roundtrip.py`
+（texture 脚本默认用 Gaussian SH DC 作观测色，可直接在现有 bundle 上跑，无需 A3 缓存）。
+
+**为什么真实运行仍不能现在跑：**要训练/抽取/渲染多个真实场景并产生大日志，且指标与
+baseline 选择、纹理 UV atlas / 渲染 round-trip PSNR/SSIM/LPIPS / Pareto 口径尚未冻结
+（见 `PROJECT-GAPS-ZH.md` P0.3--P0.5）。Codex 下一步补表格生成器与真实场景的唯一命令、
+PASS/FAIL，再交给你。**现在不要启动任何新的下游训练或批量导出。**
+
+**2026-07-08 CPU 实跑（Codex 完成，无需你操作）：**三条度量已首次实跑在既有 sphere
+seed-0 backbone 上，全部 CPU。P0.3 certified binding 零泄漏、baseline 泄漏 12.9%；
+P0.4 collision 单点 coverage 26.84% / false 74.18%；P0.5 烘焙 PSNR 36.32 dB、seam 16.86 dB。
+**弱点诊断（重要）：**后两个"弱点"经 CPU 诊断均为**评测口径产物、非 mechanism bug**——
+collision 的 tolerance(1% bbox)比方法自身精度(中位误差 0.033)更紧，扫描到 2% bbox coverage
+即 72%（bridge/alpha 过滤实测无改善，证伪切向外推假设）；texture seam 用了噪声 SH-DC 颜色，
+其跨边界原始色方差 16.68 dB 已等于烘焙后 16.86 dB，共享 atlas 修不了。真正杠杆是几何训练
+精度与多视 photometric 颜色（均属 GPU）。已把两处评测改成不再产生误导数值（collision 加
+tolerance 扫描、texture 并列 raw ceiling）。**操作性
+发现：**旧 `hybrid_asset/asset_mapping.npz` 早于 `attached_patch_ids` 字段，texture/edit
+评测会拒绝旧 bundle；已重导出到 `hybrid_asset_reexport/`。**今后任何要跑 edit/texture
+评测的 bundle（含真实 DTU）都必须用当前 exporter 重新导出，否则评测会报
+`predates attached_patch_ids`。**
 
 ## Action 1：GeoSplat 状态（已完成）
 
@@ -561,7 +680,7 @@ RGB-only `FAIL (3/3)` 仍独立保留。下一项公平性缺口是 SuGaR 尚未
 场景按同一 split、官方 evaluator 和明确 extractor 口径运行；不能拿 synthetic
 SuGaR pilot 与 DTU 3DGS 数字直接比较。
 
-## Action 19：SuGaR-DTU scan105 公平 pilot（待执行，一轮 SuGaR）
+## Action 19：SuGaR-DTU scan105 公平 pilot（部分完成，待 3090 续跑）
 
 使用与 matched 3DGS/anchored method 相同的 scan105、固定 7-view `test.txt` 和
 `scan105_vanilla_matched` 7k checkpoint。配置仍是已登记的 8GB pilot：50k SDF
@@ -588,3 +707,101 @@ conda run --no-capture-output -n sugar python \
 若训练报错，保留最后 50 行日志并停下；不要改 bbox、SDF samples 或 mesh vertices。
 36GB 剩余空间足够本 pilot，但不要同时启动 scan24/65。原生 mesh 与统一 extractor
 必须同时报告，不能只挑较好的一项。
+
+2026-07-04 现场状态：coarse 15k 训练已完整保存到
+`sugar_internal/coarse/scan105/sugarcoarse_3Dgs7000_densityestim02_sdfnorm02/15000.pt`；
+随后在 surface level 0.3 生成 10,000,032 个 surface points，进入 foreground
+mesh reconstruction 时主机崩溃。当前没有 coarse mesh、refined checkpoint 或任何
+`results.json`，因此 Action 19 不得记为完成。换用 3090 后原样重跑上述命令；
+runner 会自动传入现有 `--coarse_model_path`，从 mesh extraction 继续，不重训 coarse
+model。不改 manifest 的 pilot 预算与评测口径。
+
+最终状态：**已完成（3090）。** 迁移到 autodl 后环境变化：数据根改为
+`/root/autodl-tmp/emgs-real`，官方 DTU 包为原始双层目录
+（`Points/Points/stl/` 与 `SampleSet/SampleSet/MVS Data/ObsMask/`）。新增
+`scripts/dtu_official_layout.py`，在评测前把标准 `ObsMask/` 与 `Points/stl/` 软链接
+到 manifest 的 `official_gt_root`（`/tmp/emgs-dtu-official-layout`）；`run_sugar_pilot.py`
+现支持从已抽取的 `refined_gaussians.ply`/`coarse_mesh.ply` 续跑 mesh extraction，不重训
+coarse。三份结果均已生成：
+
+- 原生 SuGaR mesh：overall `1.2861`（d2s `1.1734` / s2d `1.3988`）；
+- refined→统一 extractor：overall `1.5396`（d2s `0.8156` / s2d `2.2636`）；
+- 渲染：PSNR `30.728` / SSIM `0.9268`（8 test views）。
+
+对照同 scan105 的 matched 3DGS overall `0.9831`、anchored `0.9195`、PSNR `32.7--32.9`。
+即在此 8GB pilot 预算下 SuGaR 明显落后，但这是单场景 discovery、且 SuGaR 非官方
+full budget，只作同机同 split 诊断。完整表见 `RESULTS-LATEST.md` 的
+“SuGaR-DTU scan105 公平 pilot”。仓库根 `error.txt` 是修复前一次手动评测（`$DTU`
+误指向 SampleSet 双层目录、缺 `stl105_total.ply`）的残留日志，问题已由
+`dtu_official_layout.py` 解决，可删除。
+
+## Action 20：SuGaR-DTU scan24/65 复验（待执行，需 3090 + sugar 环境）
+
+**目的：**把 SuGaR 的 DTU 公平对照从单场景 scan105 扩到与 3DGS/anchor 相同的三个
+scans。scan105 已作为 discovery 完成；scan24/65 用**完全相同**的 8GB pilot 预算与
+评测口径复验，使 SuGaR 首次拥有跨场景、同 split、同 extractor 的 DTU 数字。
+
+**前置状态（我已冻结）：**scan24/65 的 `_vanilla_matched` 7k checkpoint 已存在于
+`/root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/`；官方 GT 的 `stl024/stl065`
+与 `ObsMask24/65` 均在本地；磁盘剩余约 200 GB，足够两场。唯一未冻结项是 SuGaR 前景
+`bbox`：scan105 manifest 里的 bbox 是 SuGaR 自身按
+`radius = 1.1 × max‖cam_center − mean‖`、`factor=1.0` 自动算出的前景框，写死只为
+可复现。scan24/65 的框依赖 SuGaR 归一化后的相机中心，无法用 COLMAP 原始坐标 CPU
+直接推出，需按同一公式在 sugar 环境里算一次。
+
+**代码冻结（已完成）：**`run_sugar_pilot.py` 现允许 manifest 省略 `scene_bbox`；
+缺省时不传 `--bboxmin/--bboxmax` 并传 `--center_bbox True`，由 SuGaR 用官方默认
+`radius = 1.1 × max‖cam_center − mean‖`、`factor=1.0`、以相机平均为中心的前景框，
+derivation 完全可复现且跨 scan 一致。scan105 原有显式框路径保持不变。已新增
+`experiments/manifests/sugar_dtu_scan24_pilot.json` 与 `sugar_dtu_scan65_pilot.json`
+（除 scene / 无 `scene_bbox` 外，逐字复制 scan105 的预算与评测口径）。所有输入已核：
+两场 `_vanilla_matched` 7k checkpoint、`stl024/stl065`、`ObsMask24/65`、
+`sparse/0/test.txt`（各 7 view）均在本地，磁盘剩余约 200 GB。
+
+**bbox 口径说明（需你知晓）：**scan105 manifest 里那组显式框是**略各向异性**的
+（half-width 0.536/0.517/0.480），并非 SuGaR 纯自动公式产出的立方体，其确切来源无法从
+仓库复原。因此 scan24/65 改用 SuGaR **官方自动前景框**（立方体、相机平均居中），这是
+最可复现、跨 scan 最一致的选择。代价是 scan105 与 24/65 的 bbox derivation 不是逐字
+相同（scan105 显式框 vs 24/65 自动框），差异仅为前景裁剪框的 ~10% 各向异性。若你要求
+三场严格同法，唯一办法是把 scan105 也改为自动框重跑一次——但那会覆盖已有 scan105
+mesh。默认**不重跑 scan105**；如需严格统一请明确告知。
+
+**命令（冻结，需 3090 + `sugar` 环境；两场分别单独跑，勿并行）：**
+
+```bash
+cd /root/autodl-tmp/E-Manifold-GS
+for scan in 24 65; do
+  python scripts/run_sugar_pilot.py \
+    --manifest experiments/manifests/sugar_dtu_scan${scan}_pilot.json \
+    --execute
+  conda run --no-capture-output -n sugar python \
+    scripts/evaluate_sugar_rendering.py \
+    --manifest experiments/manifests/sugar_dtu_scan${scan}_pilot.json
+done
+```
+
+scan24/65 尚无 coarse SuGaR 模型，会各自从 `_vanilla_matched` 7k 训练 coarse 15k
+再抽 mesh + 2k refinement（比 scan105 的续跑更久）。若某场训练/抽取报错，保留该场
+`sugar.log` 最后 50 行并停下，不改 bbox、SDF samples、mesh vertices 或预算。
+
+**验收（冻结）：**两场都必须同时报告原生 mesh 与 patch extractor 两个 overall，加上
+render PSNR/SSIM，不得只挑较好一项；与各自 scan 的 matched 3DGS/anchor 数字并列进
+`RESULTS-LATEST.md`。结论口径保持“8GB pilot 诊断”，不得升级为“优于官方 SuGaR”。
+
+最终状态：**已完成。** 首跑两场都在 mesh extraction 阶段 CUDA OOM——根因不是显存
+不足，而是 runner 里 8GB 时代的 `PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64`
+让 PyTorch3D rasterizer 的分配碎片化（实测峰值仅约 3.2 GB）。已从 `run_sugar_pilot.py`
+去掉该环境变量，改用默认 allocator；scan24/65 均一次通过，评测口径、分辨率与预算
+完全未改，因此对结果无方法学影响。两场 coarse 15k checkpoint 已存在，续跑只做
+extraction + 2k refinement + 评测。三场结果（含 Action 19 的 scan105）：
+
+| scan | SuGaR native overall ↓ | SuGaR patch overall ↓ | PSNR ↑ | SSIM ↑ |
+|---|---:|---:|---:|---:|
+| 24 | 1.2060 | 1.2619 | 25.176 | 0.8355 |
+| 65 | 1.6806 | 1.6179 | 28.427 | 0.9459 |
+| 105 | 1.2861 | 1.5396 | 30.728 | 0.9268 |
+
+对照 matched 3DGS 几何 overall（24: 1.716、65: 2.464、105: 0.983）与 PSNR
+（24: 30.97、65: 31.50、105: 32.87）：**SuGaR 在 scan24/65 几何更好、scan105 几何更差，
+渲染三场全面落后**——是清晰的 mesh-vs-splat 取舍，双向都不能宣称全面胜出。完整分析与
+accuracy/completeness 分裂见 `RESULTS-LATEST.md` 的“SuGaR-DTU 三场公平 pilot”。

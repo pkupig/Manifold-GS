@@ -93,6 +93,47 @@ patch-manifold extractor，再进入官方 DTU evaluator。当前 SuGaR 仅有 s
 plane/torus pilot，没有 DTU 同场景同 extractor 结果，因此本节不能用于宣称 3DGS 或
 本方法优于 SuGaR。
 
+### SuGaR-DTU 三场公平 pilot（Action 19 scan105 + Action 20 scan24/65）
+
+三个 DTU 场景 scan24/65/105，各用同一固定 `test.txt`（24/65 为 7 view、105 为
+8 view）、同一 `*_vanilla_matched` 7k checkpoint、同一 SuGaR 8GB pilot 配置
+（coarse 15k + surface level 0.3 + 2k refinement，50k SDF samples、200k mesh
+vertices，**非官方 full budget**）。SuGaR 同时报告原生 mesh 与经本项目 patch-manifold
+extractor 的 refined Gaussians，二者都进入官方 DTU evaluator；渲染在同一 mask 口径下
+评测。3DGS 侧数字取自 `dtu_real_pilot_v1/summary.json`。
+
+**几何 DTU Chamfer overall（↓ 更好）：**
+
+| scan | matched 3DGS | manifold+anchor | SuGaR native | SuGaR patch |
+|---|---:|---:|---:|---:|
+| 24 | 1.7163 | 1.6885 | **1.2060** | 1.2619 |
+| 65 | 2.4643 | 2.3577 | 1.6806 | **1.6179** |
+| 105 | 0.9831 | **0.9195** | 1.2861 | 1.5396 |
+
+**渲染 held-out（↑ 更好，PSNR dB / SSIM）：**
+
+| scan | matched 3DGS | manifold+anchor | SuGaR |
+|---|---:|---:|---:|
+| 24 | 30.97 / 0.9349 | **31.10** / 0.9350 | 25.18 / 0.8355 |
+| 65 | 31.50 / 0.9705 | **31.80** / 0.9710 | 28.43 / 0.9459 |
+| 105 | **32.87** / 0.9650 | 32.66 / 0.9650 | 30.73 / 0.9268 |
+
+结论是**明确的 mesh-vs-splat 取舍，而非某一方全面胜出**：
+
+- **几何**：SuGaR 在 scan24（native 1.206 vs matched 3DGS 1.716，好 29.7%）与
+  scan65（patch 1.618 vs 2.464，好 34.3%）上明显优于 3DGS/anchor，但在“容易”场景
+  scan105 上明显更差（native 1.286 vs 0.983）。原因是 accuracy/completeness 分裂：
+  SuGaR 的 watertight mesh 在难场景大幅改善 completeness（scan24 s2d 1.239 vs 3DGS
+  2.504），而 3DGS 在已经很干净的 scan105 上 accuracy 本就很低，SuGaR 的 mesh 承诺
+  反而牺牲精度。
+- **渲染**：SuGaR 三场 PSNR 全面落后 2.1--5.8 dB，因为它把 splat 承诺到 mesh，牺牲了
+  novel-view 合成质量；本项目的 anchored 3DGS 在 24/65 甚至略优于 matched 3DGS。
+
+因此可发表口径为：在同机同 split 的 8GB pilot 下，**anchored 3DGS 在渲染上稳定领先、
+在最干净场景 scan105 上几何也领先，而 SuGaR 在更难场景的表面 completeness 上领先**。
+由于 SuGaR 使用 8GB pilot 而非官方 full budget，这些是同机诊断，不能宣称本方法或
+3DGS 普遍优于官方 SuGaR，也不能反过来宣称 SuGaR 普遍优于本方法。
+
 此前约 9--13 dB 的 heldout PSNR 来自导出渲染未应用 DTU
 `alpha_mask` 的评测 bug，已经失效；表中是修复 mask 后重新渲染的有效结果。
 
@@ -283,6 +324,122 @@ support anchor 与 compatibility 必须同时存在。
 
 状态：`FAIL`。这是当前应公开承认的 RGB-only registered 结论，不得用 oracle
 实验替换。主要失败项是 normal 与 normalized kernel-varifold 的注册阈值。
+
+## 4.1 Sphere seed-0 asset-utility CPU pilot（P0.3/P0.4/P0.5，2026-07-08）
+
+首次把已实现的三条 asset-utility CPU 度量**实际运行**在既有 sphere seed-0
+backbone（`experiments/analytic_sphere_s0_manifold_full_1500_v3`）上，全部为 CPU、
+无 GPU、无训练。结果 JSON 位于该目录的 `asset_eval/`。这是单场景 backbone 诊断，
+不是论文级多场景 asset benchmark（后者需真实 DTU + baseline，见 `ACTION-用户执行.md`
+A5）。
+
+**前置修复：**旧 `hybrid_asset/asset_mapping.npz` 早于 2026-07-07 新增的
+`attached_patch_ids` 字段，texture/edit 评测因此拒绝运行。已用同一 `asset/` 源
+（`projected_gaussians.ply` + `patch_mesh.ply` + `patch_mesh_meta.npz` +
+`projected_manifold.npz`）经更新后的 exporter 重新导出到 `hybrid_asset_reexport/`，
+未覆盖旧 bundle；导出内容除新增字段外与旧 manifest 一致（28 patches、collision 拒绝
+patch 27）。
+
+**P0.3 编辑传播**（patch 19，沿 +z 平移 0.1×attached bbox 对角线）：
+
+| 绑定方式 | edited pts | 边界泄漏 leaked pts | residual 污染 fraction |
+|---|---:|---:|---:|
+| certified patch binding | 145 | **0.0%** | **0.0%** |
+| nearest-radius baseline | 145 | 12.9% | 13.9% |
+
+certified binding 零跨边界泄漏、零 residual 污染；proximity baseline 跨边界泄漏。
+与合成 GT 单测结论一致，这里是在真实 backbone 上的首个数值确认。
+
+**P0.4 collision candidate**（对解析 GT 球面 20k 点，50k 采样）：单一 tolerance
+0.0242（1% bbox）下 coverage 26.84%、false-surface 74.18%。**但这个单点数值有误导性**：
+诊断（`asset_eval/` + `evaluate_collision_candidate.py --coverage-sweep`）显示 candidate→GT
+距离**中位数 0.0329**，即整张表面均匀地"接近但不精确"，而 tolerance 0.0242 恰好卡在
+该误差之下。tolerance 扫描：
+
+| tolerance (bbox 比例) | coverage ↑ | false-surface ↓ |
+|---|---:|---:|
+| 0.5% (0.0121) | 6.7% | 94.7% |
+| 1% (0.0242) | 26.8% | 74.2% |
+| 2% (0.0485) | **72.2%** | **22.2%** |
+| 3% (0.0727) | 88.0% | 7.6% |
+| 5% (0.1212) | 97.5% | 0.2% |
+
+在与方法自身精度匹配的 tolerance（≈2% bbox，约 1.5× 中位误差）下 coverage 已达 72%、
+false 降到 22%。**证伪了"切向外推 bridge 三角形制造大量无支撑面"的假设**：circumradius
+/alpha bridge 过滤实测对 false-fraction 无改善（最紧档仍 0.63，只是把面积按比例削掉），
+因为 false-surface 均匀分布、不是集中在长三角。→ 真正的杠杆是 **certified 几何精度本身**
+（需训练/GPU），不是 CPU 三角化 mechanism。
+
+**P0.5 texture round-trip**（逐 patch SH-DC 烘焙，分辨率 32）：per-patch reprojection
+PSNR **36.32 dB**；相邻 patch seam PSNR **16.86 dB**。**seam 同样是评测口径产物而非
+charting 缺陷**：新增的 raw-ceiling 诊断显示，同一批跨 patch 邻点对的**原始输入颜色**
+（完全不烘焙）disagreement PSNR 为 **16.68 dB**，与烘焙后 16.86 dB 基本相同，baking
+excess error −0.006（烘焙甚至因平均略优）。提高分辨率无改善，bilinear 反而更差。→ seam
+是逐 Gaussian **SH-DC 颜色本身的跨边界方差**，共享 UV/atlas 修不了；该度量本就设计用
+多视 `photometric_mean_color`（需 A3 GPU 缓存），SH-DC 只是噪声代理下界。
+
+**小结（含 2026-07-08 弱点诊断）：**编辑绑定给出干净正向证据；collision 74% 与 texture
+16.86 dB 两个"弱点"经诊断均为**评测配置产物**，不是 mechanism bug——collision 的 tolerance
+比方法精度更紧，texture 用了噪声 SH-DC 颜色。因此"先 CPU 修 mechanism"对这两项不适用：
+真正的杠杆是几何训练精度（GPU）与多视 photometric 颜色（A3/GPU）。CPU 侧已把两处评测
+改成**不再产生误导数值**：collision 加 coverage-vs-tolerance 扫描并报告精度匹配 tolerance，
+texture 在 seam 旁并列 raw-color ceiling。
+
+## 4.2 A3 真实 DTU photometric evidence（scan105，2026-07-08）
+
+在 scan105 `_vanilla_matched` 7k 上实跑 `build_observation_evidence.py --images`（CPU/IO，
+读 56 个训练视图，14s 完成）。输出 `experiments/observation_evidence/scan105_photometric.npz`。
+
+- gaussians 102,783；sparse_supported_fraction 0.4932（与既有一致）；
+- photometric_multiview_fraction **0.9998**（99.99% 被 ≥2 训练视图 first-hit 看到，
+  view count 中位 49），说明 DTU 真实覆盖密集，几乎没有 <2 视图的欠观测点；
+- `photometric_std`（跨视图 RGB 方差，[0,1]）分布：
+
+| p1 | p10 | p25 | p50 | p75 | p90 | p95 | p99 | mean | max |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.012 | 0.040 | 0.054 | 0.077 | 0.110 | 0.150 | 0.194 | 0.318 | 0.090 | 0.411 |
+
+**阈值冻结（未定，需决策）：**分布无明显 knee，中位 0.077 反映真实 DTU 的视相关外观
+（高光/曝光）而非全是 floater。候选一致性门限：p90≈0.15 保留 90%、p75≈0.11 保留 75%。
+**但从单场景 scan105 冻结一个绝对全局阈值有单场景过拟合风险**（文档反复告诫）；更稳的做法
+是把门限表述为**每场景相对百分位**，或先补 scan24/65 的同一分布再定绝对值。当前不擅自
+冻结绝对数值。
+
+**与 texture 弱点的关系：**该 cache 现已提供真实多视 `photometric_mean_color`，正是 §4.1
+texture seam 需要的非噪声颜色源。但要验证它能否降低 seam，需要 scan105 的 hybrid asset
+bundle（当前只有 sphere 有 bundle），即先在 scan105 上跑一次 asset export，属后续项。
+
+## 4.3 scan105 真实场景 hybrid bundle：P0.1 gate 首次生效 + texture 颜色源验证（2026-07-08）
+
+用既有 scan105 `_vanilla_matched` 投影产物（`asset/` 内 projected_gaussians / patch_mesh /
+meta / projected_manifold，2026-07-05 已生成，无需 GPU）导出首个**真实场景 hybrid asset
+bundle**，位于 `.../scan105_vanilla_matched/hybrid_asset/`，并首次让 observation gate 端到端
+生效（evidence = §4.2 的 photometric cache，索引空间已核对与 patch_meta 一致）。
+
+**P0.1 observation gate 首次真实作用**（402 patches）：
+
+| reject reason | patches |
+|---|---:|
+| accepted | 234 |
+| insufficient_sparse_support | 139 |
+| inconsistent_photometry（相对 p90 门限）| 29 |
+
+即新的**每场景相对百分位** photometric 门限在真实 scan105 上确实拒掉 29 个通过了 sparse
+support 但跨视图颜色不一致的 patch——机制在真实数据上有效，不再只是合成单测。
+
+**texture seam 的颜色源验证**（解决 §4.1/§4.2 留下的尾巴）：同一 scan105 bundle 分别用
+噪声 SH-DC 与真实多视 `photometric_mean_color` 作观测色：
+
+| 颜色源 | per-patch reproj PSNR | seam PSNR | raw-color ceiling | baking excess |
+|---|---:|---:|---:|---:|
+| SH-DC（噪声代理）| 33.70 | 12.50 | 11.86 | −0.024 |
+| 多视 photometric_mean_color | **50.73** | **18.36** | 18.24 | −0.002 |
+
+两点确认了 §4.1 的诊断：(1) 换成真实多视颜色使 seam **+5.86 dB**（12.5→18.36），说明
+原"seam 弱"很大程度是 **SH-DC 颜色噪声**而非 charting 缺陷；(2) 但两种颜色源下 baked
+seam 都 ≈ raw-color ceiling（18.36 vs 18.24），baking excess ≈0，即剩余 seam 仍是**跨
+边界的真实颜色方差**，共享 atlas 仍然基本修不动。→ texture 的真实杠杆是颜色源质量
+（多视 > SH-DC），不是 UV atlas；论文口径应如此陈述。
 
 ## 5. 当前结论边界
 

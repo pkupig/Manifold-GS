@@ -42,6 +42,15 @@ from manifold_gs.oracle_depth import (
 )
 from manifold_gs.multiview_anchor import multiview_center_loss, project_centers
 from manifold_gs.static_support import StaticPointSupport
+from manifold_gs.observation_evidence import (
+    ColmapCamera,
+    aggregate_patch_evidence,
+    build_sparse_support_evidence,
+    compute_camera_evidence,
+    compute_photometric_evidence,
+    compute_visibility_evidence,
+    save_sparse_support_evidence,
+)
 
 
 def write_plane_ply(path: Path, n: int = 8) -> None:
@@ -93,6 +102,371 @@ def test_patch_mesh_smoke(tmp_path: Path) -> None:
     assert (tmp_path / "asset" / "certified_patches.obj").is_file()
     assert (tmp_path / "asset" / "certified_patches.mtl").is_file()
     assert (tmp_path / "asset" / "asset_mapping.npz").is_file()
+
+
+def test_sparse_observation_evidence_rejects_floater_patch(tmp_path: Path) -> None:
+    gaussians = tmp_path / "gaussians.ply"
+    sparse = tmp_path / "sparse.ply"
+    write_plane_ply(gaussians, n=8)
+    write_plane_ply(sparse, n=8)
+    evidence = build_sparse_support_evidence(
+        gaussians, sparse, support_k=3, radius_multiplier=2.0,
+    )
+    assert evidence["sparse_supported"].all()
+
+    # Treat four supported vertices as patch 0 and override four vertices as a
+    # synthetic unsupported floater patch to test aggregation independently.
+    evidence["sparse_supported"][-4:] = False
+    cache = tmp_path / "evidence.npz"
+    save_sparse_support_evidence(cache, evidence)
+    aggregate = aggregate_patch_evidence(
+        cache,
+        np.asarray([0, 1, 2, 3, 60, 61, 62, 63]),
+        np.asarray([0, 0, 0, 0, 1, 1, 1, 1]),
+        min_supported_fraction=0.5,
+    )
+    assert aggregate["observationally_supported"].tolist() == [True, False]
+    assert aggregate["reject_reason"].tolist() == ["accepted", "insufficient_sparse_support"]
+
+
+def test_camera_evidence_reports_views_parallax_and_footprint() -> None:
+    cameras = [
+        ColmapCamera("left.png", 100, 100, 100, 100, 50, 50, np.eye(3), np.asarray([0.5, 0, 0])),
+        ColmapCamera("right.png", 100, 100, 100, 100, 50, 50, np.eye(3), np.asarray([-0.5, 0, 0])),
+    ]
+    evidence = compute_camera_evidence(
+        np.asarray([[0.0, 0.0, 5.0], [100.0, 0.0, 5.0]]),
+        np.asarray([0.1, 0.1]),
+        cameras,
+    )
+    assert evidence["training_view_count"].tolist() == [2, 0]
+    assert evidence["max_parallax_deg"][0] > 10
+    assert np.isclose(evidence["mean_projection_radius_px"][0], 2.0)
+    assert evidence["camera_support_kind"].item() == "frustum_no_occlusion"
+
+
+def test_visibility_evidence_counts_first_hit_over_occluded() -> None:
+    camera = ColmapCamera("front.png", 100, 100, 100, 100, 50, 50, np.eye(3), np.zeros(3))
+    # A occludes B along the same pixel ray; C sits in its own pixel bin.
+    xyz = np.asarray([[0.0, 0.0, 2.0], [0.0, 0.0, 5.0], [1.0, 0.0, 5.0]])
+    evidence = compute_visibility_evidence(xyz, [camera], pixel_bin=4.0)
+    assert evidence["first_hit_view_count"].tolist() == [1, 0, 1]
+    assert evidence["occluded_view_count"].tolist() == [0, 1, 0]
+    assert evidence["visibility_support_kind"].item() == "first_hit_occlusion"
+
+
+def test_first_hit_threshold_rejects_occluded_patch(tmp_path: Path) -> None:
+    gaussians = tmp_path / "gaussians.ply"
+    sparse = tmp_path / "sparse.ply"
+    write_plane_ply(gaussians, n=8)
+    write_plane_ply(sparse, n=8)
+    evidence = build_sparse_support_evidence(gaussians, sparse, support_k=3, radius_multiplier=2.0)
+    # Inject first-hit visibility: patch 0 is seen, patch 1 is fully occluded.
+    evidence["first_hit_view_count"] = np.full(64, 3, dtype=np.int16)
+    evidence["first_hit_view_count"][-4:] = 0
+    cache = tmp_path / "evidence.npz"
+    save_sparse_support_evidence(cache, evidence)
+    aggregate = aggregate_patch_evidence(
+        cache,
+        np.asarray([0, 1, 2, 3, 60, 61, 62, 63]),
+        np.asarray([0, 0, 0, 0, 1, 1, 1, 1]),
+        min_supported_fraction=0.5,
+        min_first_hit_views=1,
+    )
+    assert aggregate["observationally_supported"].tolist() == [True, False]
+    assert aggregate["reject_reason"].tolist() == ["accepted", "insufficient_first_hit_visibility"]
+    assert aggregate["median_first_hit_view_count"].tolist() == [3.0, 0.0]
+
+
+def test_mesh_surface_sampling_is_area_weighted_and_deterministic() -> None:
+    from manifold_gs.collision_metrics import sample_mesh_surface
+
+    vertices = np.asarray([[0.0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=np.float64)
+    faces = np.asarray([[0, 1, 2], [0, 2, 3]])
+    first = sample_mesh_surface(vertices, faces, 2000, seed=5)
+    second = sample_mesh_surface(vertices, faces, 2000, seed=5)
+    assert np.array_equal(first[0], second[0])
+    assert np.isclose(first[2], 1.0)
+    assert np.all(first[0][:, 2] == 0.0)
+    assert np.allclose(np.abs(first[1][:, 2]), 1.0)
+
+
+def test_collision_coverage_flags_floater_surface() -> None:
+    from manifold_gs.collision_metrics import surface_coverage_metrics
+
+    square_v = np.asarray([[0.0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=np.float64)
+    square_f = np.asarray([[0, 1, 2], [0, 2, 3]])
+    # Candidate = the true square plus a far floater triangle (area 0.5, distance 10).
+    candidate_v = np.vstack([square_v, [[0, 0, 10], [1, 0, 10], [0, 1, 10]]])
+    candidate_f = np.vstack([square_f, [[4, 5, 6]]])
+    reference_xyz, reference_normals, _ = __import__(
+        "manifold_gs.collision_metrics", fromlist=["sample_mesh_surface"]
+    ).sample_mesh_surface(square_v, square_f, 8000, seed=1)
+
+    metrics = surface_coverage_metrics(
+        candidate_v, candidate_f, reference_xyz, reference_normals,
+        tolerance=0.05, samples=8000, seed=2,
+    )
+    assert metrics["coverage"] > 0.99
+    assert 0.25 < metrics["false_surface_fraction"] < 0.42
+    assert metrics["false_surface_area"] > 0.3
+    assert metrics["supported_normal_median_deg"] < 1.0
+    assert metrics["hausdorff"] > 9.0
+
+
+def test_coverage_sweep_is_monotonic_and_reports_error_distribution() -> None:
+    from manifold_gs.collision_metrics import coverage_tolerance_sweep, sample_mesh_surface
+
+    # A unit square shifted 0.03 off its reference plane: the surface is uniformly
+    # "close but not exact", so at a tolerance below 0.03 almost all of it reads as
+    # false surface, and above 0.03 almost none does -- the single-tolerance trap.
+    ref_v = np.asarray([[0.0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=np.float64)
+    ref_f = np.asarray([[0, 1, 2], [0, 2, 3]])
+    cand_v = ref_v + np.asarray([0.0, 0.0, 0.03])
+    reference_xyz, _, _ = sample_mesh_surface(ref_v, ref_f, 8000, seed=1)
+
+    result = coverage_tolerance_sweep(
+        cand_v, ref_f, reference_xyz,
+        tolerances=np.asarray([0.01, 0.02, 0.05, 0.1]), samples=8000, seed=2,
+    )
+    rows = result["sweep"]
+    coverage = [r["coverage"] for r in rows]
+    false_frac = [r["false_surface_fraction"] for r in rows]
+    # Coverage rises and false surface falls as tolerance grows.
+    assert coverage == sorted(coverage)
+    assert false_frac == sorted(false_frac, reverse=True)
+    # Tolerance 0.01 < offset 0.03 => nearly all false; 0.05 > offset => nearly none.
+    assert false_frac[0] > 0.9
+    assert false_frac[2] < 0.05
+    assert abs(result["candidate_to_reference_median"] - 0.03) < 5e-3
+
+
+def test_collision_confusion_separates_false_and_missed() -> None:
+    from manifold_gs.collision_metrics import collision_confusion
+
+    candidate = np.asarray([[0.0, 0, 0], [1, 0, 0]])
+    reference = np.asarray([[0.0, 0, 0], [5, 0, 0]])
+    probes = np.asarray([[0, 0, 0.01], [1, 0, 0.01], [5, 0, 0.01], [10, 10, 10]])
+    labels = np.asarray(["occupied", "occupied", "occupied", "unknown"])
+    result = collision_confusion(
+        candidate, reference, probes, contact_tolerance=0.05, probe_labels=labels
+    )
+    assert result["false_collision"] == 1
+    assert result["missed_collision"] == 1
+    assert result["candidate_contact"] == 2
+    assert result["reference_contact"] == 2
+    assert np.isclose(result["agreement"], 0.5)
+    assert result["unknown_probes"] == 1
+    assert np.isclose(result["unknown_marked_free_fraction"], 1.0)
+
+
+def test_texture_roundtrip_improves_with_resolution() -> None:
+    from manifold_gs.texture_metrics import baking_roundtrip_metrics
+
+    grid = np.linspace(0.0, 1.0, 40)
+    gx, gy = np.meshgrid(grid, grid, indexing="ij")
+    points = np.column_stack([gx.ravel(), gy.ravel(), np.zeros(gx.size)])
+
+    constant = np.full((points.shape[0], 3), 0.4)
+    constant_metrics = baking_roundtrip_metrics(points, constant, resolution=32)
+    assert constant_metrics["reprojection_error_max"] < 1e-9
+    assert not np.isfinite(constant_metrics["reprojection_psnr"]) or constant_metrics["reprojection_psnr"] > 80
+
+    # A high-frequency stripe pattern: low-res baking averages it away, high-res keeps it.
+    stripes = 0.5 + 0.5 * np.sign(np.sin(20.0 * np.pi * gx.ravel()))
+    stripe_colors = np.repeat(stripes[:, None], 3, axis=1)
+    low = baking_roundtrip_metrics(points, stripe_colors, resolution=4)
+    high = baking_roundtrip_metrics(points, stripe_colors, resolution=64)
+    assert high["reprojection_psnr"] > low["reprojection_psnr"]
+    assert high["reprojection_error_mean"] < low["reprojection_error_mean"]
+
+
+def test_seam_error_grows_when_patches_disagree() -> None:
+    from manifold_gs.texture_metrics import seam_error_metrics
+
+    ys = np.linspace(0.0, 1.0, 5)
+    left = np.array([[x, y, 0.0] for x in (0.9, 1.0) for y in ys])
+    right = np.array([[x, y, 0.0] for x in (1.1, 1.2) for y in ys])
+    points = np.vstack([left, right])
+    patch_ids = np.array([0] * len(left) + [1] * len(right))
+    gray = lambda pts: np.repeat(pts[:, 1:2], 3, axis=1)  # colour depends on y only
+
+    matched = np.vstack([gray(left), gray(right)])
+    matched_seam = seam_error_metrics(points, patch_ids, matched, 8, boundary_radius=0.15)
+    assert matched_seam["boundary_pairs"] > 0
+    assert matched_seam["seam_error_mean"] < 0.05
+
+    mismatched = np.vstack([gray(left), gray(right) + 0.5])
+    mismatched_seam = seam_error_metrics(points, patch_ids, mismatched, 8, boundary_radius=0.15)
+    assert mismatched_seam["boundary_pairs"] == matched_seam["boundary_pairs"]
+    assert mismatched_seam["seam_error_mean"] > 0.4
+
+
+def test_seam_raw_ceiling_flags_genuine_colour_variance() -> None:
+    from manifold_gs.texture_metrics import seam_error_metrics
+
+    ys = np.linspace(0.0, 1.0, 5)
+    left = np.array([[x, y, 0.0] for x in (0.9, 1.0) for y in ys])
+    right = np.array([[x, y, 0.0] for x in (1.1, 1.2) for y in ys])
+    points = np.vstack([left, right])
+    patch_ids = np.array([0] * len(left) + [1] * len(right))
+
+    # The two patches carry genuinely different constant colours. Then the baked seam
+    # cannot be better than the raw cross-patch colour disagreement, and the baking
+    # itself adds essentially nothing -- a shared atlas would not help.
+    colors = np.vstack([
+        np.full((len(left), 3), 0.2),
+        np.full((len(right), 3), 0.7),
+    ])
+    seam = seam_error_metrics(points, patch_ids, colors, 8, boundary_radius=0.15)
+    assert seam["boundary_pairs"] > 0
+    assert np.isclose(seam["raw_seam_error_mean"], seam["seam_error_mean"], atol=1e-6)
+    assert abs(seam["baking_excess_error_mean"]) < 1e-6
+    assert np.isclose(seam["raw_seam_psnr"], seam["seam_psnr"], atol=1e-6)
+
+
+def test_photometric_evidence_flags_view_disagreement() -> None:
+    left = ColmapCamera("left.png", 100, 100, 100, 100, 50, 50, np.eye(3), np.asarray([0.5, 0, 0]))
+    right = ColmapCamera("right.png", 100, 100, 100, 100, 50, 50, np.eye(3), np.asarray([-0.5, 0, 0]))
+    # p0 seen consistently, p1 seen with disagreeing colour, p2 seen in one view only.
+    xyz = np.asarray([[0.0, 0, 5], [1.0, 0, 5], [-2.5, 0, 5]])
+    image_left = np.zeros((100, 100, 3))
+    image_right = np.zeros((100, 100, 3))
+    image_left[50, 60] = [0.5, 0.5, 0.5]   # p0 in left
+    image_right[50, 40] = [0.5, 0.5, 0.5]  # p0 in right
+    image_left[50, 80] = [1.0, 0.0, 0.0]   # p1 in left (red)
+    image_right[50, 60] = [0.0, 0.0, 1.0]  # p1 in right (blue)
+    image_left[50, 10] = [0.3, 0.3, 0.3]   # p2 in left only
+    evidence = compute_photometric_evidence(
+        xyz, [left, right], [image_left, image_right], pixel_bin=4.0
+    )
+    assert evidence["photometric_view_count"].tolist() == [2, 2, 1]
+    assert evidence["photometric_std"][0] < 1e-6
+    assert evidence["photometric_std"][1] > 0.3
+    assert not np.isfinite(evidence["photometric_std"][2])
+    assert evidence["photometric_support_kind"].item() == "first_hit_pixel_sample"
+
+
+def test_photometric_thresholds_reject_inconsistent_and_underseen(tmp_path: Path) -> None:
+    gaussians = tmp_path / "gaussians.ply"
+    sparse = tmp_path / "sparse.ply"
+    write_plane_ply(gaussians, n=8)
+    write_plane_ply(sparse, n=8)
+    evidence = build_sparse_support_evidence(gaussians, sparse, support_k=3, radius_multiplier=2.0)
+    evidence["photometric_std"] = np.full(64, 0.01, dtype=np.float32)
+    evidence["photometric_view_count"] = np.full(64, 4, dtype=np.int16)
+    evidence["photometric_std"][[20, 21, 22, 23]] = 0.9      # patch 1: inconsistent colour
+    evidence["photometric_view_count"][[40, 41, 42, 43]] = 1  # patch 2: too few views
+    cache = tmp_path / "evidence.npz"
+    save_sparse_support_evidence(cache, evidence)
+    aggregate = aggregate_patch_evidence(
+        cache,
+        np.asarray([0, 1, 2, 3, 20, 21, 22, 23, 40, 41, 42, 43]),
+        np.asarray([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2]),
+        min_supported_fraction=0.5,
+        max_photometric_std=0.1,
+        min_photometric_views=2,
+    )
+    assert aggregate["observationally_supported"].tolist() == [True, False, False]
+    assert aggregate["reject_reason"].tolist() == [
+        "accepted", "inconsistent_photometry", "insufficient_photometric_views"
+    ]
+
+
+def test_relative_photometric_percentile_gate_is_per_scene(tmp_path: Path) -> None:
+    # Four patches with distinct, well-separated median stds. A relative percentile gate
+    # keeps the low-std patches and rejects only the scene's worst tail -- no absolute
+    # value is frozen; the resolved threshold is derived from this scene's distribution.
+    gaussians = tmp_path / "gaussians.ply"
+    sparse = tmp_path / "sparse.ply"
+    write_plane_ply(gaussians, n=8)
+    write_plane_ply(sparse, n=8)
+    evidence = build_sparse_support_evidence(gaussians, sparse, support_k=3, radius_multiplier=2.0)
+    evidence["photometric_std"] = np.zeros(64, dtype=np.float32)
+    evidence["photometric_view_count"] = np.full(64, 4, dtype=np.int16)
+    rows = np.asarray([0, 1, 2, 3, 20, 21, 22, 23, 40, 41, 42, 43, 60, 61, 62, 63])
+    pids = np.asarray([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3])
+    stds = {0: 0.02, 1: 0.05, 2: 0.10, 3: 0.40}
+    for p, s in stds.items():
+        evidence["photometric_std"][rows[pids == p]] = s
+    cache = tmp_path / "evidence.npz"
+    save_sparse_support_evidence(cache, evidence)
+
+    # percentile=75 => cap at the 75th percentile of {0.02,0.05,0.10,0.40} = 0.175,
+    # so only the 0.40 patch is rejected; nothing else is.
+    aggregate = aggregate_patch_evidence(
+        cache, rows, pids,
+        min_supported_fraction=0.5,
+        max_photometric_std_percentile=75.0,
+        min_photometric_views=2,
+    )
+    assert aggregate["observationally_supported"].tolist() == [True, True, True, False]
+    assert aggregate["reject_reason"][3] == "inconsistent_photometry"
+    assert np.isclose(float(aggregate["photometric_std_threshold"]), 0.175, atol=1e-6)
+    assert np.isclose(float(aggregate["photometric_std_percentile"]), 75.0)
+
+    # The same relative percentile on a scene whose stds are all 10x larger keeps the
+    # same *fraction*, proving it adapts per scene instead of using a fixed number.
+    evidence["photometric_std"][:] = 0.0
+    for p, s in stds.items():
+        evidence["photometric_std"][rows[pids == p]] = s * 10.0
+    save_sparse_support_evidence(cache, evidence)
+    scaled = aggregate_patch_evidence(
+        cache, rows, pids,
+        min_supported_fraction=0.5,
+        max_photometric_std_percentile=75.0,
+        min_photometric_views=2,
+    )
+    assert scaled["observationally_supported"].tolist() == [True, True, True, False]
+    assert np.isclose(float(scaled["photometric_std_threshold"]), 1.75, atol=1e-6)
+
+
+def test_rigid_deformation_rotates_about_pivot() -> None:
+    from manifold_gs.edit_metrics import rigid_deformation
+
+    quarter_turn = np.asarray([[0.0, -1, 0], [1, 0, 0], [0, 0, 1]])
+    pivot = np.asarray([1.0, 0.0, 0.0])
+    deform = rigid_deformation(quarter_turn, np.zeros(3), pivot=pivot)
+    moved = deform(np.asarray([[1.0, 0, 0], [2.0, 0, 0]]))
+    assert np.allclose(moved[0], pivot)          # pivot is fixed
+    assert np.allclose(moved[1], [1.0, 1.0, 0.0])  # (2,0) rotates to (1,1)
+
+
+def test_certified_binding_beats_radius_binding_on_leakage() -> None:
+    from manifold_gs.edit_metrics import (
+        certified_patch_binding,
+        edit_propagation_metrics,
+        propagate_edit,
+        radius_binding,
+        rigid_deformation,
+    )
+
+    xs = [0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 5.0, 6.0]
+    points = np.column_stack([xs, np.zeros(8), np.zeros(8)])
+    patch_ids = np.asarray([0, 0, 0, 1, 1, 1, -1, -1])
+    edit_region = patch_ids == 0
+    residual_mask = patch_ids < 0
+    lift = rigid_deformation(np.eye(3), np.asarray([0.0, 0.0, 1.0]))
+    target = propagate_edit(points, lift, edit_region)
+
+    certified = propagate_edit(points, lift, certified_patch_binding(patch_ids, [0]))
+    certified_metrics = edit_propagation_metrics(
+        points, certified, target, edit_region, residual_mask=residual_mask
+    )
+    assert certified_metrics["target_shift_mean"] == 1.0
+    assert certified_metrics["edit_error_max"] == 0.0
+    assert certified_metrics["boundary_leakage_max"] == 0.0
+    assert certified_metrics["leaked_point_fraction"] == 0.0
+    assert certified_metrics["residual_contamination_max"] == 0.0
+
+    nearest = propagate_edit(points, lift, radius_binding(points, points[edit_region], 0.15))
+    nearest_metrics = edit_propagation_metrics(
+        points, nearest, target, edit_region, residual_mask=residual_mask
+    )
+    assert nearest_metrics["edit_error_max"] == 0.0            # selected region still correct
+    assert np.isclose(nearest_metrics["boundary_leakage_max"], 1.0)  # leaks the x=0.3 neighbour
+    assert np.isclose(nearest_metrics["leaked_point_fraction"], 0.2)
+    assert nearest_metrics["residual_contamination_max"] == 0.0  # far residuals untouched
 
 
 def test_losses_are_differentiable() -> None:

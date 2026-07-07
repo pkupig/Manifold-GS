@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import shutil
 
+from dtu_official_layout import ensure_dtu_official_layout
 
 PILOT_SCANS = (24, 65, 105)
 
@@ -20,6 +21,7 @@ def main() -> None:
     parser.add_argument("--scan", type=int, action="append")
     args = parser.parse_args()
     scans = args.scan or list(PILOT_SCANS)
+    ensure_dtu_official_layout(args.official_root)
     free_gb = shutil.disk_usage(args.work_root.parent).free / 1024**3
     report: dict[str, object] = {
         "work_root": str(args.work_root), "work_free_gb": free_gb,

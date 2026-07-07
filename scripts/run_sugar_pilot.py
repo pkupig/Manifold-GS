@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 
+from dtu_official_layout import ensure_dtu_official_layout
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT / "third_party" / "SuGaR"
@@ -88,7 +89,10 @@ def main() -> None:
         checkpoint_suffix = manifest.get("checkpoint_suffix", "_vanilla")
         checkpoint = resolve(manifest["checkpoint_root"]) / f"{scene}{checkpoint_suffix}"
         output = resolve(manifest["output_root"]) / scene
-        bbox = manifest["scene_bbox"][scene]
+        # scene_bbox is optional: when a scene has no recorded foreground box we
+        # let SuGaR compute its own camera-based bbox (official default), which
+        # keeps the derivation identical and reproducible across scans.
+        bbox = manifest.get("scene_bbox", {}).get(scene)
         geometry_out = output / "geometry_metrics.json"
         evaluation_type = manifest.get("evaluation", {}).get("type")
         completion = (
@@ -100,10 +104,20 @@ def main() -> None:
             print(f"[resume] exists: {completion}")
             continue
 
-        if args.execute and config.get("externalize_sugar_outputs", False):
+        copied_ply = output / "refined_gaussians.ply"
+        copied_mesh = output / "coarse_mesh.ply"
+        assets_ready = copied_ply.is_file() and copied_mesh.is_file()
+
+        if args.execute and assets_ready:
+            print(f"[resume] reusing extracted assets: {copied_mesh}, {copied_ply}")
+        elif args.execute and config.get("externalize_sugar_outputs", False):
             prepare_external_output_links(scene, output)
+        # NOTE: the old PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64 (an 8GB-era
+        # setting) fragments the allocator on the larger matched-3DGS scenes
+        # (~330k gaussians, e.g. scan24/65) and makes mesh extraction OOM inside
+        # the PyTorch3D rasterizer even though peak usage is only ~3GB. On the
+        # 24GB 3090 the default allocator extracts fine, so we no longer pin it.
         command = [
-            "env", "PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64",
             "conda", "run", "--no-capture-output", "-n", args.conda_env, "python", "train.py",
             "-s", str(source), "-c", str(checkpoint),
             "-i", str(config["iteration_to_load"]),
@@ -111,41 +125,55 @@ def main() -> None:
             "--sdf_samples", str(config["sdf_samples"]),
             "-l", str(config["surface_level"]),
             "-v", str(config["mesh_vertices"]),
+            "--mesh_surface_points", str(config.get("mesh_surface_points", 10_000_000)),
+            "--poisson_depth", str(config.get("poisson_depth", 10)),
+            "--poisson_threads", str(config.get("poisson_threads", -1)),
             "-g", str(config["gaussians_per_triangle"]),
             "-f", str(config["refinement_iterations"]),
-            f"--bboxmin={bbox_arg(bbox['min'])}", f"--bboxmax={bbox_arg(bbox['max'])}",
-            "--center_bbox", "False",
             "--export_uv_textured_mesh", str(config["export_uv_textured_mesh"]),
             "--export_ply", "True", "--eval", "True",
             "--seed", str(config["seed"]),
         ]
+        if bbox is not None:
+            # Explicit recorded box (e.g. scan105); used as-is, not re-centered.
+            command += [
+                f"--bboxmin={bbox_arg(bbox['min'])}",
+                f"--bboxmax={bbox_arg(bbox['max'])}",
+                "--center_bbox", "False",
+            ]
+        else:
+            # No recorded box: SuGaR builds a camera-based foreground box
+            # (radius = 1.1 * max||cam_center - mean||, centered on the camera
+            # average). Omitting --bboxmin/--bboxmax selects that default path.
+            command += ["--center_bbox", "True"]
         coarse_checkpoint = (
             REPO / "output/coarse" / scene
             / "sugarcoarse_3Dgs7000_densityestim02_sdfnorm02/15000.pt"
         )
         if coarse_checkpoint.is_file():
             command.extend(["--coarse_model_path", str(coarse_checkpoint)])
-        invoke(command, REPO, args.execute, output / "sugar.log")
+        if not assets_ready:
+            invoke(command, REPO, args.execute, output / "sugar.log")
         if not args.execute:
             continue
 
-        refined_ply = newest(f"output/refined_ply/{scene}/*.ply")
-        coarse_mesh = newest(f"output/coarse_mesh/{scene}/*.ply")
-        output.mkdir(parents=True, exist_ok=True)
-        copied_ply = output / "refined_gaussians.ply"
-        copied_mesh = output / "coarse_mesh.ply"
-        shutil.copy2(refined_ply, copied_ply)
-        shutil.copy2(coarse_mesh, copied_mesh)
+        if not assets_ready:
+            refined_ply = newest(f"output/refined_ply/{scene}/*.ply")
+            coarse_mesh = newest(f"output/coarse_mesh/{scene}/*.ply")
+            output.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(refined_ply, copied_ply)
+            shutil.copy2(coarse_mesh, copied_mesh)
         if manifest.get("evaluation", {}).get("type") == "dtu":
             evaluation = manifest["evaluation"]
             scan = int(scene.removeprefix("scan"))
-            official_root = evaluation["official_gt_root"]
+            official_root = Path(evaluation["official_gt_root"])
+            ensure_dtu_official_layout(official_root)
             data_root = str(resolve(manifest["dataset_root"]))
             native_out = output / "dtu_native_mesh"
             invoke([
                 sys.executable, str(DTU_EVAL), "--input_mesh", str(copied_mesh),
                 "--scan_id", str(scan), "--output_dir", str(native_out),
-                "--mask_dir", data_root, "--DTU", official_root,
+                "--mask_dir", data_root, "--DTU", str(official_root),
             ], ROOT, True)
             patch_asset = output / "patch_asset"
             invoke([
@@ -157,7 +185,7 @@ def main() -> None:
                 "--input_mesh", str(patch_asset / "patch_mesh.ply"),
                 "--scan_id", str(scan),
                 "--output_dir", str(output / "dtu_patch_mesh"),
-                "--mask_dir", data_root, "--DTU", official_root,
+                "--mask_dir", data_root, "--DTU", str(official_root),
             ], ROOT, True)
         else:
             invoke([

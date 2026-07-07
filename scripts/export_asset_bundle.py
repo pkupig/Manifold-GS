@@ -28,6 +28,18 @@ def main() -> None:
     parser.add_argument("--out", required=True, help="Output asset bundle directory")
     parser.add_argument("--collision-min-faces", type=int, default=8)
     parser.add_argument("--collision-max-patch-diameter-ratio", type=float, default=3.0)
+    parser.add_argument("--observation-evidence", default=None)
+    parser.add_argument("--min-observation-supported-fraction", type=float, default=0.5)
+    parser.add_argument("--min-observation-training-views", type=int, default=0)
+    parser.add_argument("--min-observation-parallax-deg", type=float, default=0.0)
+    parser.add_argument("--min-observation-first-hit-views", type=int, default=0)
+    parser.add_argument("--max-observation-photometric-std", type=float, default=float("inf"))
+    parser.add_argument(
+        "--max-observation-photometric-std-percentile", type=float, default=None,
+        help="per-scene relative gate: reject patches above this percentile of the scene's "
+             "finite per-patch median photometric std (e.g. 90 rejects the worst 10%%)",
+    )
+    parser.add_argument("--min-observation-photometric-views", type=int, default=0)
     args = parser.parse_args()
     manifest = export_asset_bundle(
         args.gaussians,
@@ -37,6 +49,14 @@ def main() -> None:
         args.collision_min_faces,
         args.source_map,
         args.collision_max_patch_diameter_ratio,
+        args.observation_evidence,
+        args.min_observation_supported_fraction,
+        args.min_observation_training_views,
+        args.min_observation_parallax_deg,
+        args.min_observation_first_hit_views,
+        args.max_observation_photometric_std,
+        max_observation_photometric_std_percentile=args.max_observation_photometric_std_percentile,
+        min_observation_photometric_views=args.min_observation_photometric_views,
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))
 

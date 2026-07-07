@@ -1,0 +1,48 @@
+# Reproducible Linux environment for this repository, SuGaR, and 3DGS.
+# Create from the repository root:
+#   conda env create -f environment-sugar.yml
+#
+# cuda-toolkit is included because the local rasterizer/KNN packages compile
+# CUDA extensions and therefore need nvcc, not only the PyTorch CUDA runtime.
+name: sugar
+
+channels:
+  - pytorch3d
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.9.18
+  - pip
+  - setuptools
+  - wheel
+  - ninja
+
+  - pytorch=2.0.1
+  - torchvision=0.15.2
+  - torchaudio=2.0.2
+  - pytorch-cuda=11.8
+  - cuda-toolkit=11.8
+  - pytorch3d=0.7.4
+
+  - numpy=1.26.2
+  - scipy=1.11.4
+  - scikit-learn=1.3.2
+  - matplotlib=3.8.2
+  - pandas=2.1.4
+  - pillow=10.0.1
+  - plyfile=0.8.1
+  - tqdm=4.66.1
+  - pyyaml=6.0
+  - rich=13.7.0
+
+  - pip:
+      - open3d==0.18.0
+      - PyMCubes==0.1.4
+      - trimesh==4.5.3
+      - pyquaternion==0.9.9
+      - ConfigArgParse==1.7
+      - ./third_party/SuGaR/gaussian_splatting/submodules/diff-gaussian-rasterization
+      - ./third_party/SuGaR/gaussian_splatting/submodules/simple-knn
