@@ -14,6 +14,31 @@
 - 长 GPU sweep、完整外部 baseline、批量真实场景和会产生大日志的任务先写入这里，
   经你执行后我负责汇总、诊断和写论文。
 
+## ⭐ 当前待你执行（2026-07-08，最新，先看这段）
+
+**结论：现在没有任何"必须"由你执行的 GPU 任务。** 本轮的 asset-utility 度量
+（P0.3/P0.4/P0.5）、A3 真实 DTU photometric、相对百分位 identifiability gate、以及首个
+真实 scan105 hybrid bundle，都已由 Codex 在本机 CPU 完成、通过 44 项测试并提交
+（commit `22ee3d2`）。你不需要为这些动手。
+
+**唯一一个只能你做的可选任务 = A1 Blender 人工导入检查**（需要一台带 GUI 的 Blender
+机器；本 3090 是无头的，我做不了）。现在它比原来更有意义——可在**真实 scan105 bundle**
+上做，而不只是 sphere：
+
+- 目标目录（在本 3090 机上，需下载到你本地 Blender 机器）：
+  `/root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/`
+  需要的文件：`certified_patches.obj` + 同目录 `certified_patches.mtl`、`collision_candidate.ply`
+  （可选 `attached_gaussians.ply`）。
+- 检查：导入 OBJ 无报错；Outliner / material slots 能看到分 patch 分组；再导入 collision
+  candidate，确认与主体空间对齐、无明显跨面长三角；开放边界允许存在。
+- 完成后只回一句 "PASS" 或贴报错文本即可，我据此继续。
+
+**不需要你动手、由 Codex 继续的**（仅供你了解）：
+1. A5 真实场景 asset benchmark 的协议冻结（表格生成器 + 唯一命令 + PASS/FAIL），冻结后才交你；
+2. scan105 的 P0.4 collision-vs-GT（需先把 DTU 官方 stl 对齐到 Gaussian 坐标系）。
+
+（下面是完整历史账本，各 Action 的最终状态见各自小节。）
+
 ## 当前状态
 
 `plane_torus_sparse_v2_shape` 及后续 identifiability、depth robustness、structured

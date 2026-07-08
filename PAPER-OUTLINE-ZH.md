@@ -61,7 +61,11 @@
 - C：registered RGB-only 失败，作为理论边界验证。
 - D：2DGS 与 SuGaR 外部对照，严格标注 narrow/pilot。
 - E：fixed-support/trust-region 多 seed 负结果，证明 sparse/noisy anchor 不稳定。
-- 后续必须新增真实数据，当前结果不得写成 SOTA 表。
+- F：asset-utility CPU 度量（编辑传播、collision coverage/false-surface-vs-tolerance、
+  texture round-trip/seam）在 sphere 与真实 scan105 backbone 上的首批数字；含观测
+  identifiability gate（sparse support + multi-view photometric，每场景相对百分位门限）
+  在 scan105 上端到端拒绝 patch 的统计。强调 collision/texture 的表观弱点为评测口径产物。
+- 后续必须新增真实数据、经渲染器 round-trip 与外部 binding 对照，当前结果不得写成 SOTA 表。
 
 ### 7. Limitations
 
@@ -69,6 +73,8 @@
 - 局部 chart 不保证全局拓扑。
 - sparse COLMAP support 对 seed/noise 敏感。
 - SuGaR full budget、GeoSplat implementation 与真实 benchmark 尚缺。
+- asset-utility 的表观弱点（collision false-surface、texture seam）经诊断为评测口径产物，
+  真实杠杆是几何精度与多视颜色质量；UV atlas 与经渲染器 round-trip 仍缺。
 
 ## 图表优先级
 

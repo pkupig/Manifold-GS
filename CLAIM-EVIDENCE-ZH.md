@@ -1,6 +1,6 @@
 # Claim–Evidence Matrix（论文唯一口径）
 
-更新日期：2026-07-03。本文档优先级高于早期 proposal、TODO 和可行性文档。
+更新日期：2026-07-08。本文档优先级高于早期 proposal、TODO 和可行性文档。
 
 ## 证据等级
 
@@ -17,6 +17,8 @@
 | 保质量、重心与切向矩的 refinement 对离散 varifold 扰动有条件上界 | `PROVEN` | `THEORY-PROOF-SKETCH.md`、`THEORY-STABILITY.md` | 要求采样、切向误差和局部尺度条件 |
 | covariance spectrum 可统一生成维度标签、切平面、质量与局部图诊断 | `IMPLEMENTED` | diagnostics、projection、patch mesh、统一 evaluator | 分类阈值不是语义 GT，也无拓扑保证 |
 | certified patch 可导出为带 source 映射的 hybrid asset bundle | `IMPLEMENTED` | `asset_bundle.py`、导出脚本、smoke test、sphere seed-0 bundle | 仅为 asset backbone；尚无 UV/GLB、编辑任务或生产级 collision 验证 |
+| asset-utility CPU 度量（编辑传播/collision coverage/texture round-trip）已实现并在 sphere 与真实 scan105 上给出首批数字 | `IMPLEMENTED` | `edit_metrics.py`/`collision_metrics.py`/`texture_metrics.py` + 评测脚本、单测、sphere & scan105 bundle | collision 高 false-surface 与 texture seam 为**评测口径产物**（tolerance 相对精度、SH-DC 颜色噪声）；真实多场景、经渲染器 round-trip 与外部 binding 对照仍缺，不得据此声称下游优于基线 |
+| 观测 identifiability gate（sparse support + first-hit + multi-view photometric，每场景相对百分位门限）可在真实场景拒绝无支撑/不一致 patch | `IMPLEMENTED` | `observation_evidence.py`、A3 scan105 cache、scan105 端到端 gate（402 patch 拒 139 sparse + 29 photometric）、单测 | 仅为观测支持/一致性证据；尚缺 free-space conflict 与 Fisher/Jacobian 证书，不等价于完整 identifiability certificate |
 | cross-field 基本形式残差用于检测局部 realizability，而不只是一阶法向一致性 | `PROVEN/IMPLEMENTED` | `THEORY-BONNET.md`、compatibility cache 与测试 | Bonnet 条件不选择 GT，也不保证优化器找到正确曲面 |
 | reliable depth/data anchor 与 compatibility 结合时可显著改善 analytic geometry | `EMPIRICAL-CONDITIONAL` | oracle、noise、affine calibration、densification 实验 | oracle 不是公平 sparse-RGB 方法；结构化 bias 可得到错误但可实现曲面 |
 | RGB-only 下 realizability 与 identifiability 必须分开 | `PROVEN + EMPIRICAL` | Jacobian/coercivity 分析；RGB、multi-view、fixed-support 失败 | 这是问题分解与负结果，不是 SOTA reconstruction claim |
@@ -63,6 +65,8 @@ sparse-view surface reconstruction。
 | DTU matched 3DGS | **`FAIL 3/3`** | 两场正、一场负；mean overall 仅改善 0.271% < 1%，PSNR/点数 guardrail 通过 |
 | DTU scan105 + fixed COLMAP anchor | post-hoc 单场景成功 | 相对 matched 3DGS overall 改善 6.47%、completeness 改善 8.92%，PSNR -0.210 dB；不可外推 |
 | DTU fixed COLMAP anchor replication | **`PASS 2/2`** | discovery 排除；scan24/65 overall 均改善，平均 +2.97%，PSNR/点数 guardrail 通过 |
+| sphere/scan105 asset-utility CPU 度量 | `IMPLEMENTED` | certified binding 零泄漏 vs nearest-radius 泄漏 12.9%；collision false-surface(74%@1% tol) 与 texture seam 经诊断为评测口径产物——tolerance 放宽到 2% bbox coverage 即 72%，多视颜色使 scan105 seam 12.5→18.36 dB |
+| scan105 观测 identifiability gate 端到端 | 生效 | 402 patch 拒 168（sparse 139 + 相对 p90 photometric 29）、accepted 234；证明相对百分位机制在真实数据有效，非仅合成单测 |
 
 COLMAP-anchor 的 scan105 是 discovery，不进入 replication 判定。在查看 scan24/65
 anchor 结果前冻结两场复验规则：两场 overall 都必须为正、平均相对改善至少 1%，
