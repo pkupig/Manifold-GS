@@ -25,19 +25,20 @@ from manifold_gs.texture_metrics import baking_roundtrip_metrics, seam_error_met
 _SH_C0 = 0.28209479177387814
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--bundle", required=True, help="asset bundle directory")
-    parser.add_argument("--out", required=True)
-    parser.add_argument("--resolution", type=int, default=32)
-    parser.add_argument("--min-patch-samples", type=int, default=8)
-    parser.add_argument("--boundary-radius-frac", type=float, default=0.02,
-                        help="seam boundary radius as a fraction of the attached bbox diagonal")
-    parser.add_argument("--evidence", default=None,
-                        help="observation evidence npz; uses photometric_mean_color instead of SH DC")
-    args = parser.parse_args()
+def evaluate_texture(
+    bundle: Path,
+    *,
+    resolution: int = 32,
+    min_patch_samples: int = 8,
+    boundary_radius_frac: float = 0.02,
+    evidence: str | None = None,
+) -> dict:
+    """Per-patch texture baking round-trip and seam error on a bundle (P0.5).
 
-    bundle = Path(args.bundle)
+    Returns the report dict (including ``per_patch``); does not touch disk. Shared by
+    the standalone script and ``scripts/run_asset_benchmark.py``.
+    """
+    bundle = Path(bundle)
     mapping = np.load(bundle / "asset_mapping.npz")
     if "attached_patch_ids" not in mapping:
         raise ValueError("asset_mapping.npz predates attached_patch_ids; re-export the bundle")
@@ -45,8 +46,8 @@ def main() -> None:
     points = np.stack([rows["x"], rows["y"], rows["z"]], axis=1).astype(np.float64)
     patch_ids = np.asarray(mapping["attached_patch_ids"], dtype=np.int32).reshape(-1)
 
-    if args.evidence is not None:
-        cache = np.load(args.evidence)
+    if evidence is not None:
+        cache = np.load(evidence)
         if "photometric_mean_color" not in cache:
             raise ValueError("evidence cache has no photometric_mean_color; run build with --images")
         row_by_source = {int(s): i for i, s in enumerate(np.asarray(cache["source_indices"]).reshape(-1))}
@@ -66,21 +67,21 @@ def main() -> None:
     per_patch = []
     for patch in np.unique(patch_ids):
         rows_p = np.flatnonzero(patch_ids == patch)
-        if rows_p.size < args.min_patch_samples:
+        if rows_p.size < min_patch_samples:
             continue
-        metrics = baking_roundtrip_metrics(points[rows_p], colors[rows_p], args.resolution)
+        metrics = baking_roundtrip_metrics(points[rows_p], colors[rows_p], resolution)
         metrics["patch_id"] = int(patch)
         per_patch.append(metrics)
 
     finite = [p["reprojection_psnr"] for p in per_patch if np.isfinite(p["reprojection_psnr"])]
     seam = seam_error_metrics(
-        points, patch_ids, colors, args.resolution,
-        boundary_radius=args.boundary_radius_frac * max(diagonal, 1e-12),
+        points, patch_ids, colors, resolution,
+        boundary_radius=boundary_radius_frac * max(diagonal, 1e-12),
     )
-    report = {
+    return {
         "bundle": str(bundle.resolve()),
         "color_source": color_source,
-        "resolution": args.resolution,
+        "resolution": resolution,
         "attached_bbox_diagonal": diagonal,
         "evaluated_patches": len(per_patch),
         "reprojection_psnr_mean": float(np.mean(finite)) if finite else float("inf"),
@@ -88,6 +89,27 @@ def main() -> None:
         "seam": seam,
         "per_patch": per_patch,
     }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bundle", required=True, help="asset bundle directory")
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--resolution", type=int, default=32)
+    parser.add_argument("--min-patch-samples", type=int, default=8)
+    parser.add_argument("--boundary-radius-frac", type=float, default=0.02,
+                        help="seam boundary radius as a fraction of the attached bbox diagonal")
+    parser.add_argument("--evidence", default=None,
+                        help="observation evidence npz; uses photometric_mean_color instead of SH DC")
+    args = parser.parse_args()
+
+    report = evaluate_texture(
+        Path(args.bundle),
+        resolution=args.resolution,
+        min_patch_samples=args.min_patch_samples,
+        boundary_radius_frac=args.boundary_radius_frac,
+        evidence=args.evidence,
+    )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")

@@ -441,11 +441,53 @@ seam 都 ≈ raw-color ceiling（18.36 vs 18.24），baking excess ≈0，即剩
 边界的真实颜色方差**，共享 atlas 仍然基本修不动。→ texture 的真实杠杆是颜色源质量
 （多视 > SH-DC），不是 UV atlas；论文口径应如此陈述。
 
+## 4.4 三真实场景 asset benchmark + P0.4 确定性对齐（scan24/65/105，2026-07-13）
+
+将 A5 冻结协议 `asset-benchmark/1.0` 首次跑到**三个真实 DTU 场景**。scan24/65 用与
+scan105 相同口径导出 bundle（observation evidence + 相对 p90 photometric gate）。
+
+**edit(P0.3) / texture(P0.5) 三场景全 PASS**（表：`experiments/asset_table.md`）：
+
+| 场景 | certified 泄漏 | baseline 泄漏 | 泄漏减 | 往返 PSNR | baking excess | overall |
+|---|---:|---:|---:|---:|---:|:--:|
+| scan24 | 0 | 0.1474 | 0.1474 | 30.11 dB | −0.054 | PASS |
+| scan65 | 0 | 0.2814 | 0.2814 | 35.34 dB | −0.016 | PASS |
+| scan105 | 0 | 0.1351 | 0.1351 | 33.70 dB | −0.024 | PASS |
+
+**P0.4 坐标对齐已解决且确定性**：DTU 官方 stl（mm，DTU 世界帧）→ Gaussian/重建帧的变换
+就是预处理 `cameras.npz` 里的 `scale_mat`（均匀缩放+平移相似变换），**无需 ICP**。三场景
+重建 mesh → 变换后 stl 最近邻中位残差均 **<0.1% bbox**（scan105 0.04%）。均匀缩放保方向，
+stl 自带法线直接复用。
+
+**collision 精度（与裁剪无关的方向：候选→GT）：**
+
+| 场景 | floater%(>1%bbox) | 候选→GT 中位 | 候选→GT p95 | 法线中位° |
+|---|---:|---:|---:|---:|
+| scan24 | **18.25** | 0.121% | **5.13%** | 49.5 |
+| scan65 | 0.87 | 0.126% | 0.657% | 51.7 |
+| scan105 | 1.54 | 0.058% | 0.501% | 52.2 |
+
+- scan65/105 的 collision candidate 几何忠实（floater <2%、p95 <0.7% bbox）。
+- **scan24 是发现**：中位仅 0.12%（主体贴合 GT），但 p95 5.1% + floater 18% —— 非全局失配，
+  而是一**簇整片悬浮的 patch**（26/188/143/130/27…，各 100% 面 >1% bbox，离 GT 中位 2–6% bbox）。
+  这些 patch 直径 1.5–2.5× 中位，**低于 3× scale gate、且通过 observation gate**，故三道
+  GT-free 导出闸都没挡住。→ 诚实结论：**"被相机看到但几何脱离真实表面"的 floater，GT-free
+  自证闸挡不住，正需 P0.4 collision-vs-GT（需 GT）才照得出**；这既是 P0.4 指标的价值证明，
+  也是 exporter 当前 3× scale gate 对 scan24 偏松的证据（不擅自改冻结阈值，波及 65/105）。
+- 法线中位 ~50°（无向）三场景一致，是 splat 派生 patch mesh 高频法线噪声，观察项非 gate。
+
+**待冻结（决策：保留、暂不做）**：`coverage`(recall) 与 `hausdorff` 现被 DTU 背景底盘污染
+（完整 stl_total），需官方 **ObsMask + Plane 裁剪**才可比可入 gate；未裁前 benchmark 的
+collision 线保持 `skip`，不接入 overall。
+
 ## 5. 当前结论边界
 
 - 已证明/验证：显式几何质量、守恒 refinement、局部 cross-field realizability
   约束、cache/MLS 稳定条件、data-identifiability 分解。
 - 已观察：compatibility 在无 densification 和有可靠 support anchor 时显著改善
   normal/varifold；结构化 depth bias 会形成错误但可实现的曲面。
+- 已验证（asset-utility，三真实场景 scan24/65/105）：certified 编辑绑定零泄漏（baseline
+  0.135–0.281）、texture 往返 30–35 dB，冻结协议 `asset-benchmark/1.0` 全 PASS（§4.4）。
+  P0.4 揭示 scan24 存在 GT-free 闸挡不住的 floater 簇——collision-vs-GT 的独立价值。
 - 尚未证明：RGB-only 普遍优于 2DGS、SuGaR 或任何 GeoSplat 实现；真实深度先验下的多 seed 收益；完整
   Gauss-Codazzi training；任意场景的 manifold/GT 收敛。

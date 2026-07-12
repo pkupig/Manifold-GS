@@ -338,6 +338,14 @@ collision false-positive/false-negative、texture reprojection quality、mesh si
 并在 sphere 与真实 scan105 backbone 上给出首批数字（见 §7.5）；仍缺的是经渲染器的
 round-trip PSNR/SSIM 与外部 binding 对照。
 
+为使这些度量成为可复现的判据而非一次性数字，我们把三条线固化为一个带显式 PASS/FAIL
+的冻结协议（`asset-benchmark/1.0`）：单一命令在任一导出 bundle 上运行编辑与纹理两线
+（碰撞线在提供对齐 GT 时启用），并按预先冻结的阈值给出逐线判定与整体退出码。阈值刻意
+避开会被评测口径主导的量——编辑线以“proximity baseline 是否确实跨边界泄漏”为信息量来源
+（certified 由构造零泄漏），纹理线只约束“烘焙相对原始跨边界色方差**额外**引入的 seam”而
+非绝对 seam，碰撞线按相对 GT 精度自适应读取覆盖率。协议、阈值与判据是唯一真源，任何阈值
+改动都需版本升级。
+
 ## 7. 实验
 
 ### 7.1 实验问题与指标
@@ -423,6 +431,14 @@ asset 导出：402 个 patch 中 139 个因 sparse support 不足、29 个因 mu
 不一致（每场景相对百分位门限）被拒，234 个通过认证。以上说明相应 CPU 度量已就绪，但真实
 多场景、经渲染器的 round-trip 以及与 SuGaR/Poisson binding 的对照仍未完成。
 
+在冻结协议 `asset-benchmark/1.0`（§6.2）下，真实 scan105 bundle 的编辑与纹理两线均判定为
+**PASS**：编辑线中 proximity baseline 跨边界泄漏率为 13.5%，而 certified source-mapping 绑定
+为 0（泄漏下降 0.135，零 residual 污染）；纹理线逐 patch 烘焙 round-trip 为 33.7 dB，且烘焙
+相对原始跨边界色方差的**额外** seam 为 −0.024（即共享 atlas 无正收益，剩余 seam 是真实色
+方差）。碰撞线因暂无对齐到 Gaussian 坐标系的 GT 表面而标为 skip，不计入整体判定。该结果把
+§7.5 前述的“度量已实现”升级为“首个真实场景在冻结判据下通过”，但多场景表、碰撞 GT 与外部
+binding 对照仍是定稿前的必备项。
+
 ### 7.6 DTU matched diagnostic：无 anchor 的失败
 
 我们在 DTU scan24、65、105 上采用相同半分辨率 7k schedule、固定 7-view held-out
@@ -488,10 +504,27 @@ regularizer。
 - Curve/volume mixed-dimensional 分支已有表示接口，但尚无足够实验支撑为主贡献。
 - 当前 asset 输出缺少 UV/material baking、collision proxy、编辑传播与标准 GLB/OBJ
   封装；“asset-ready backbone”与“可直接用于生产的 asset”之间仍有工程和实验缺口。
-- asset-utility 度量（编辑/collision/texture）虽已实现并在 sphere 与 scan105 上运行，
+- asset-utility 度量（编辑/collision/texture）虽已实现、固化为带 PASS/FAIL 的冻结协议
+  （`asset-benchmark/1.0`）并在 sphere 与真实 scan105 上运行（scan105 编辑/纹理两线 PASS），
   但首批结果显示 collision 的高 false-surface 与 texture seam 这两个表观弱点主要由评测
   口径决定（tolerance 相对方法精度过紧、观测颜色源为噪声 SH-DC），真实杠杆是几何精度
-  与多视颜色质量；真正的 UV atlas、经渲染器的 round-trip PSNR/SSIM 与外部 binding 对照仍缺。
+  与多视颜色质量；真正的 UV atlas、经渲染器的 round-trip PSNR/SSIM、碰撞 GT 与外部 binding
+  对照仍缺。
+
+**本文刻意不主张的命题（边界，而非待补实验）。** 为避免过度声明，以下两点不作为本文 claim：
+（i）RGB-only 普遍优于 2DGS/SuGaR/GeoSplat——本文自身的 DTU 证据反对该命题（无 anchor
+3/3 FAIL，anchor 也仅条件性改善），因此我们只主张 data-coercivity 的必要性，不主张 RGB-only
+的普遍优越；（ii）任意场景的无条件收敛——这在原理上不可作为定理，本文只给出 §5 的**条件**
+可辨识性（可靠 depth graph 或 restricted rendering Jacobian 在 compatible tangent space 上
+最小奇异值严格为正时成立），不追求无条件版本。这两点与下面 future work 中“可做但未做”的
+条目性质不同，不应混为“待补实验”。
+
+**可做但未做的条目（future work，非原理障碍）。** 与上述边界相对，以下两项在机制上可达、
+仅受实验/工程量所限：（i）真实深度先验下的多 seed 收益——§5 的 depth-$H^1$ coercivity 预测
+可靠可见深度应同时收紧位置与 tangent，从而在多 seed 下稳定改善可见区域的 varifold 距离，
+但尚未在真实深度先验上做多 seed 验证；（ii）完整 Gauss–Codazzi 训练——当前仅对一阶/二阶
+基本形式 compatibility 做 ramp-in，完整 Gauss–Codazzi 约束的实现与消融是工程扩展而非证明
+障碍。此外多场景 asset benchmark 表、碰撞 GT 对齐与外部 binding 对照亦属此类。
 
 ## 10. 结论
 

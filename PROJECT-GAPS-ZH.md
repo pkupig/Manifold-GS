@@ -113,6 +113,10 @@ mapping 传播后报告 target-region edit error、boundary leakage 与 residual
 `attached_patch_ids` 让 mapping 自描述。合成 GT 单测已确认 certified 零泄漏/零污染、
 proximity baseline 跨边界泄漏。仍缺的是合成有 GT 的完整 edit 场景与真实人工检查协议、
 以及 Poisson/SuGaR binding 的外部对照运行——需数据/训练，见 `ACTION-用户执行.md` A5/P0.3。
+2026-07-10：PASS/FAIL 已冻结（`asset-benchmark/1.0`）——certified 泄漏/污染须为 0 且 baseline
+泄漏 `>= 1%`（否则场景不具区分度，标 uninformative）；唯一命令
+`scripts/run_asset_benchmark.py --bundle <hybrid_asset>`。真实 scan105 已实跑 PASS
+（baseline 泄漏 13.5% vs certified 0）。
 
 2026-07-08 执行：已在 sphere seed-0 backbone 上实跑（CPU）。certified binding 零泄漏/
 零污染，nearest-radius baseline 泄漏 12.9%、residual 污染 13.9%。数值见
@@ -137,6 +141,10 @@ floater/false surface area、Hausdorff、supported normal error、false/missed c
 （contact-proxy）和 unknown-marked-free 比例，均为 CPU 且有单测。仍缺的是在真实场景上
 实际运行（需 GT 表面 npz 与 probe 采样），以及 simplification 前后对照——这部分产大日志、
 需数据准备，已列入 `ACTION-用户执行.md` A5/P0.4。
+2026-07-10：PASS/FAIL 已冻结——coverage 须在 `<= 3% bbox` 的某 tolerance 达 `>= 0.80`
+（1% bbox 常紧于方法自身精度，故按 sweep 自适应读取），有 probes 时 false collision `<= 5%`，
+`unknown_marked_free` 只报告不 gate。该线需 GT 表面 npz（Gaussian 坐标系），未给 `--gt`
+时自动 skip；GT 对齐仍待做。
 
 2026-07-08 执行+诊断：sphere seed-0 collision 对解析 GT 单 tolerance(1% bbox) coverage
 26.84% / false 74.18%，但 tolerance 扫描显示这是**评测口径产物**——candidate→GT 中位误差
@@ -160,6 +168,10 @@ baking reprojection error/PSNR、texel 填充率与相邻 patch 的 seam error/P
 纹理单测（分辨率越高误差越小、颜色不一致 seam 增大）。仍缺的是真正的 UV/chart atlas、
 经渲染器的 round-trip PSNR/SSIM/LPIPS，以及 mesh-only / mesh+splat / hybrid 的
 质量-大小-速度 Pareto——这些需渲染/打包，属 GPU，见 `ACTION-用户执行.md` A5/P0.5。
+2026-07-10：PASS/FAIL 已冻结——round-trip PSNR `>= 30 dB` 且 baking excess `<= 0.02`
+（绝对 seam 由真实色方差主导，不 gate；单 chart 无边界时 seam gate 自动不适用）。真实
+scan105 已实跑 PASS（33.7 dB，excess −0.024）。渲染侧 PSNR/SSIM/LPIPS 与 Pareto 属 P1 扩展，
+不在本次冻结必跑范围。
 
 2026-07-08 执行+诊断：sphere seed-0 逐 patch 烘焙 PSNR 36.32 dB，seam PSNR 16.86 dB。
 诊断证伪"seam=charting/atlas 缺陷"：跨 patch 邻点对的**原始 SH-DC 颜色** disagreement 已

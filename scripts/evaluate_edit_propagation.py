@@ -35,21 +35,20 @@ def _centers(path: Path) -> np.ndarray:
     return np.stack([rows["x"], rows["y"], rows["z"]], axis=1).astype(np.float64)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--bundle", required=True, help="asset bundle directory")
-    parser.add_argument("--out", required=True)
-    parser.add_argument("--patches", type=int, nargs="*", default=None,
-                        help="patch ids to edit (default: the largest attached patch)")
-    parser.add_argument("--translate-frac", type=float, default=0.1,
-                        help="edit translation along +z as a fraction of the attached bbox diagonal")
-    parser.add_argument("--rotate-deg", type=float, default=0.0,
-                        help="edit rotation about +z through the selected centroid")
-    parser.add_argument("--radius-frac", type=float, default=0.05,
-                        help="baseline binding radius as a fraction of the attached bbox diagonal")
-    args = parser.parse_args()
+def evaluate_edit(
+    bundle: Path,
+    *,
+    patches: list[int] | None = None,
+    translate_frac: float = 0.1,
+    rotate_deg: float = 0.0,
+    radius_frac: float = 0.05,
+) -> dict:
+    """Score a certified-vs-baseline patch edit on an exported bundle (P0.3).
 
-    bundle = Path(args.bundle)
+    Returns the report dict; does not touch disk. Shared by the standalone script
+    and ``scripts/run_asset_benchmark.py`` so both stay on one code path.
+    """
+    bundle = Path(bundle)
     mapping = np.load(bundle / "asset_mapping.npz")
     if "attached_patch_ids" not in mapping:
         raise ValueError("asset_mapping.npz predates attached_patch_ids; re-export the bundle")
@@ -64,8 +63,8 @@ def main() -> None:
     patch_ids = np.concatenate([attached_patch_ids, np.full(residual.shape[0], -1, dtype=np.int32)])
     residual_mask = patch_ids < 0
 
-    if args.patches:
-        selected = np.asarray(args.patches, dtype=np.int32)
+    if patches:
+        selected = np.asarray(patches, dtype=np.int32)
     else:
         values, counts = np.unique(attached_patch_ids, return_counts=True)
         selected = np.asarray([int(values[counts.argmax()])], dtype=np.int32)
@@ -75,25 +74,25 @@ def main() -> None:
 
     diagonal = float(np.linalg.norm(np.ptp(attached, axis=0)))
     centroid = attached[np.isin(attached_patch_ids, selected)].mean(axis=0)
-    angle = np.radians(args.rotate_deg)
+    angle = np.radians(rotate_deg)
     rotation = np.asarray([
         [np.cos(angle), -np.sin(angle), 0.0],
         [np.sin(angle), np.cos(angle), 0.0],
         [0.0, 0.0, 1.0],
     ])
-    translation = np.asarray([0.0, 0.0, args.translate_frac * diagonal])
+    translation = np.asarray([0.0, 0.0, translate_frac * diagonal])
     deform = rigid_deformation(rotation, translation, pivot=centroid)
 
     target = propagate_edit(points, deform, edit_region)
     certified = propagate_edit(points, deform, certified_patch_binding(patch_ids, selected))
-    radius = args.radius_frac * max(diagonal, 1e-12)
+    radius = radius_frac * max(diagonal, 1e-12)
     baseline = propagate_edit(points, deform, radius_binding(points, points[edit_region], radius))
 
-    report = {
+    return {
         "bundle": str(bundle.resolve()),
         "selected_patches": selected.tolist(),
         "attached_bbox_diagonal": diagonal,
-        "edit": {"translate_frac": args.translate_frac, "rotate_deg": args.rotate_deg},
+        "edit": {"translate_frac": translate_frac, "rotate_deg": rotate_deg},
         "baseline_radius": radius,
         "certified_binding": edit_propagation_metrics(
             points, certified, target, edit_region, residual_mask=residual_mask
@@ -102,6 +101,29 @@ def main() -> None:
             points, baseline, target, edit_region, residual_mask=residual_mask
         ),
     }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bundle", required=True, help="asset bundle directory")
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--patches", type=int, nargs="*", default=None,
+                        help="patch ids to edit (default: the largest attached patch)")
+    parser.add_argument("--translate-frac", type=float, default=0.1,
+                        help="edit translation along +z as a fraction of the attached bbox diagonal")
+    parser.add_argument("--rotate-deg", type=float, default=0.0,
+                        help="edit rotation about +z through the selected centroid")
+    parser.add_argument("--radius-frac", type=float, default=0.05,
+                        help="baseline binding radius as a fraction of the attached bbox diagonal")
+    args = parser.parse_args()
+
+    report = evaluate_edit(
+        Path(args.bundle),
+        patches=args.patches,
+        translate_frac=args.translate_frac,
+        rotate_deg=args.rotate_deg,
+        radius_frac=args.radius_frac,
+    )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")

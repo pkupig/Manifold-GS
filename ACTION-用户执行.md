@@ -14,28 +14,53 @@
 - 长 GPU sweep、完整外部 baseline、批量真实场景和会产生大日志的任务先写入这里，
   经你执行后我负责汇总、诊断和写论文。
 
-## ⭐ 当前待你执行（2026-07-08，最新，先看这段）
+## ⭐ 当前待你执行（2026-07-10 更新，先看这段）
 
-**结论：现在没有任何"必须"由你执行的 GPU 任务。** 本轮的 asset-utility 度量
-（P0.3/P0.4/P0.5）、A3 真实 DTU photometric、相对百分位 identifiability gate、以及首个
-真实 scan105 hybrid bundle，都已由 Codex 在本机 CPU 完成、通过 44 项测试并提交
-（commit `22ee3d2`）。你不需要为这些动手。
+经过盘上核查：三个真实场景（scan24/65/105）的 `vanilla_matched` **7000 步 checkpoint 与
+trained ply 都已在盘**，DTU 官方 GT stl 也在盘（`.../dtu-official/Points/Points/stl/stlNNN_total.ply`）。
+因此 bundle 导出、多场景 asset benchmark、以及 P0.4 collision-vs-GT **都是 CPU 任务，Codex
+可自己做，不需要你**。真正只有你能做的仅剩 1 件（下面 ☑A1）。
 
-**唯一一个只能你做的可选任务 = A1 Blender 人工导入检查**（需要一台带 GUI 的 Blender
-机器；本 3090 是无头的，我做不了）。现在它比原来更有意义——可在**真实 scan105 bundle**
-上做，而不只是 sphere：
+### ☑ A1（只有你能做）：Blender 人工导入检查——需一台带 GUI 的 Blender 机器
 
-- 目标目录（在本 3090 机上，需下载到你本地 Blender 机器）：
+本 3090 无头，Codex 做不了。用**真实 scan105 bundle**做（比 sphere 更有说服力）。
+
+- 源目录（在本 3090 上，下载到你本地 Blender 机器）：
   `/root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/`
-  需要的文件：`certified_patches.obj` + 同目录 `certified_patches.mtl`、`collision_candidate.ply`
+- 需要文件：`certified_patches.obj` + 同目录 `certified_patches.mtl`、`collision_candidate.ply`
   （可选 `attached_gaussians.ply`）。
-- 检查：导入 OBJ 无报错；Outliner / material slots 能看到分 patch 分组；再导入 collision
-  candidate，确认与主体空间对齐、无明显跨面长三角；开放边界允许存在。
-- 完成后只回一句 "PASS" 或贴报错文本即可，我据此继续。
+- 步骤：① 导入 OBJ 无报错；② Outliner / material slots 能看到分 patch 分组；③ 再导入
+  `collision_candidate.ply`，确认与主体空间对齐、无明显跨面长三角（开放边界允许存在）；
+  ④ 存 `blender_import_check.blend`，截 solid + wireframe 两图。
+- **验收 & 回报：**导入无报错、两层空间对齐、无长跨面 → 回一句 "PASS"；否则贴报错文本。
+- 完整版细则见下方 Action A1。
 
-**不需要你动手、由 Codex 继续的**（仅供你了解）：
-1. A5 真实场景 asset benchmark 的协议冻结（表格生成器 + 唯一命令 + PASS/FAIL），冻结后才交你；
-2. scan105 的 P0.4 collision-vs-GT（需先把 DTU 官方 stl 对齐到 Gaussian 坐标系）。
+### ✅ 三项决定已推进（2026-07-13，Codex）
+
+1. **scan24/65 hybrid_asset bundle 已导出**（复刻 scan105 冻结口径：evidence + 相对 p90
+   photometric gate），落在 `.../scanNN_vanilla_matched/hybrid_asset/`。
+2. **三场景 asset benchmark 表已生成**（`experiments/asset_table.md` / `.csv`）：
+   scan24/65/105 的 edit、texture 两线全 **PASS**（certified 泄漏恒 0；baseline 泄漏
+   0.135–0.281；往返 PSNR 30.1–35.3 dB）。
+3. **P0.4 坐标对齐已解决且是确定性的**：预处理 `cameras.npz` 的 `scale_mat` 即
+   归一化↔DTU毫米帧 相似变换，**无需 ICP**；scan105 上重建→变换后 stl 最近邻中位残差
+   **0.04% bbox**。collision 精度侧极好（floater 1.5%、候选→GT 中位 0.06% bbox）。
+
+> **待办 A（已拍板：保留、暂不做，不影响文章贡献/质量）**：collision 的 `coverage`(recall)
+> 现用完整 stl_total 被 DTU 背景底盘拉低（scan105 @1% 仅 0.41，容差加大也卡在 ~0.53）。
+> 要得到可比、可入 gate 的 coverage 需套 **DTU 官方 ObsMask + Plane 裁剪**
+> （`ObsMask105_10.mat` + `Plane105.mat` 已在盘）。在实现该裁剪前，benchmark 的 collision
+> 线保持 `skip`（不把未裁剪 coverage 接入 gate，避免误判 overall FAIL）。
+
+### ✅ 已完成（Codex，无需你动手）
+
+- **A5 asset benchmark 协议已冻结（`asset-benchmark/1.0`）**：唯一命令
+  `scripts/run_asset_benchmark.py` + 表格生成器 `scripts/summarize_asset_benchmark.py` +
+  冻结阈值 `manifold_gs/asset_benchmark.py`；58 项 CPU 测试全过。真实 scan105 已实跑
+  **edit PASS / texture PASS / collision skip(无GT)**，结果在
+  `.../scan105_vanilla_matched/hybrid_asset/asset_eval/asset_benchmark.json`。细则见下方 Action A5。
+- 上一轮 asset-utility 度量、A3 真实 DTU photometric、identifiability gate 均已提交
+  （commit `22ee3d2` / `2e29984`）。
 
 （下面是完整历史账本，各 Action 的最终状态见各自小节。）
 
@@ -179,7 +204,58 @@ max_photometric_std_percentile=...)` 与 exporter 的
 **预期产物（冻结后）：**per-patch `min_fisher_eigenvalue` / `identified_directions`；主张口径从
 “realizability-aware extraction”升级为“identified asset”的证据表。
 
-## Action A5：下游 asset 任务 benchmark（P0.3/P0.4/P0.5，不要执行，协议未冻结）
+## Action A5：下游 asset 任务 benchmark（P0.3/P0.4/P0.5，✅协议已冻结 2026-07-10）
+
+### ⭐ 冻结协议（唯一命令 + PASS/FAIL，先看这段）
+
+协议版本 `asset-benchmark/1.0`（`manifold_gs/asset_benchmark.py`，阈值是唯一真源，
+改阈值必须 bump 版本号）。**edit(P0.3) 与 texture(P0.5) 两条线现在就可跑**，不需要 GT、
+不需要 GPU、不需要联网，只要 bundle 是用当前 exporter 导出的（含 `attached_patch_ids`）。
+**collision(P0.4) 仍需 GT**（DTU 官方 stl 对齐到 Gaussian 坐标系），未给 `--gt` 时该
+线自动标 `skipped`，不影响 overall。
+
+唯一命令（对每个 `hybrid_asset` 目录跑一次）：
+
+```bash
+conda run -n sugar python scripts/run_asset_benchmark.py --bundle <hybrid_asset 目录>
+# 例：/root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset
+# 加 collision：--gt <gt_surface.npz(xyz+normals，Gaussian 坐标系)> [--probes <probes.npz>]
+```
+
+产物：`<bundle>/asset_eval/asset_benchmark.json`（含各线 verdict、headline、所用阈值、
+原始子报告）。**overall FAIL 时进程退出码非 0**，可直接接 CI/PASS-FAIL 判定。
+
+跨场景汇总成论文表（表格生成器，只读上面的 json，不重算）：
+
+```bash
+conda run -n sugar python scripts/summarize_asset_benchmark.py \
+  <scene1 bundle> <scene2 bundle> ... --markdown asset_table.md --csv asset_table.csv
+```
+
+**冻结 PASS/FAIL 阈值（`THRESHOLDS`）：**
+
+- **edit(P0.3)**：certified 泄漏率 `== 0` 且 residual 污染率 `== 0`（否则 FAIL）；且
+  baseline 泄漏率 `>= 0.01`（否则该场景 patch 太分离、无法体现 certified 优势→标
+  `uninformative`，不算 FAIL 但也不算 PASS，会在报告里标出）。certified 由构造保证零泄漏，
+  真正的信息量在"baseline 确实泄漏"。
+- **texture(P0.5)**：round-trip PSNR `>= 30 dB`；且 baking excess `<= 0.02`（烘焙相对
+  raw 跨边界色方差**额外**新增的 seam；绝对 seam 由真实色方差主导、共享 atlas 修不了，故
+  不设 gate）。单 chart 无边界时 seam gate 自动不适用。
+- **collision(P0.4，需 GT)**：coverage 在 `<= 3% bbox` 的某个 tolerance 达到 `>= 0.80`
+  （因 1% bbox 常紧于方法自身精度，故按 sweep 自适应读取达标 tolerance）；有 probes 时
+  false collision 率 `<= 0.05`；`unknown_marked_free_fraction` 只报告不 gate（已知限制）。
+
+**已在真实 scan105 上实跑并 PASS（2026-07-10，Codex，无需你重跑）：** edit PASS
+（baseline 泄漏 13.5% vs certified 0，leak reduction 0.135），texture PASS（round-trip
+33.7 dB，baking excess −0.024），collision skip（无 GT）。结果已写入
+`.../scan105_vanilla_matched/hybrid_asset/asset_eval/asset_benchmark.json`。
+
+**还需你做的（可选，GPU/数据）：**（1）scan24/65 等更多真实场景——先训练/matched 抽取/
+当前 exporter 导出 bundle，再跑上面唯一命令，overall 退出码即 PASS/FAIL；（2）collision
+的 GT：把 DTU 官方 stl 对齐到 Gaussian 坐标系导成 `xyz+normals` 的 npz，再加 `--gt`。
+第（2）项的坐标对齐我（Codex）可在拿到官方 stl 路径后先做 CPU 部分。
+
+---
 
 **目的：**用可量化任务证明 hybrid asset 有用，而不只是能导出。三条线：
 
@@ -197,10 +273,11 @@ P0.4 `manifold_gs/collision_metrics.py` + `scripts/evaluate_collision_candidate.
 P0.5 `manifold_gs/texture_metrics.py` + `scripts/evaluate_texture_roundtrip.py`
 （texture 脚本默认用 Gaussian SH DC 作观测色，可直接在现有 bundle 上跑，无需 A3 缓存）。
 
-**为什么真实运行仍不能现在跑：**要训练/抽取/渲染多个真实场景并产生大日志，且指标与
-baseline 选择、纹理 UV atlas / 渲染 round-trip PSNR/SSIM/LPIPS / Pareto 口径尚未冻结
-（见 `PROJECT-GAPS-ZH.md` P0.3--P0.5）。Codex 下一步补表格生成器与真实场景的唯一命令、
-PASS/FAIL，再交给你。**现在不要启动任何新的下游训练或批量导出。**
+**协议冻结前的历史说明（已过时，见本节顶部冻结协议）：**原先未冻结是因指标与 baseline
+选择、round-trip 口径未定。2026-07-10 已冻结到 `asset-benchmark/1.0`：edit/texture 用
+per-patch 烘焙 + SH-DC（或 `--evidence` 多视色）而非全 UV atlas / 渲染 LPIPS，口径见
+`manifold_gs/asset_benchmark.py` 与 `PROJECT-GAPS-ZH.md` P0.3--P0.5。渲染侧 PSNR/SSIM/
+LPIPS 与 mesh-only/hybrid Pareto 属后续 P1 扩展，不在本次冻结的必跑范围内。
 
 **2026-07-08 CPU 实跑（Codex 完成，无需你操作）：**三条度量已首次实跑在既有 sphere
 seed-0 backbone 上，全部 CPU。P0.3 certified binding 零泄漏、baseline 泄漏 12.9%；
