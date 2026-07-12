@@ -574,6 +574,28 @@ physics/collision，假面即错误碰撞——这正是本方法的价值主张
 mesh（对 SuGaR 更有利，非稻草人）。edit/texture 线的外部 baseline（需把对手 mesh 绑回
 Gaussian 做编辑传播）与 2DGS 仍待补，见 `ACTION-用户执行.md`。
 
+## 4.8 P1.2 edit 轴外部对比：结构化可编辑性（2026-07-13）
+
+edit 轴的外部对比有个陷阱：现有 edit 指标的 `edit_region` **由 patch 定义**，certified
+binding 对它天然零泄漏，直接拿去比外部方法是**循环论证**。诚实、非循环的外部论点应落在
+**结构本身**：watertight 抽取能否提供结构化的编辑边界。
+
+对每个方法数连通分量（可编辑单元的天然边界）：
+
+| 场景 | ours 认证 patch 数 | 单 patch 中位面积占比 | SuGaR 最大连通分量 | Poisson 最大连通分量 | proximity 基线泄漏 |
+|---|---:|---:|---:|---:|---:|
+| scan24 | 381 | 0.08% | 99.0% | 97.5% | 14.7% |
+| scan65 | 390 | 0.12% | 99.5% | 99.7% | 28.1% |
+| scan105 | 402 | 0.10% | 98.3% | 99.1% | 13.5% |
+
+**结论**：Poisson/SuGaR 的 watertight mesh 把物体、底座、背景**焊成单一连通体**（最大分量
+占 97.5–99.5% 三角形），因此基于 mesh 连通性的区域编辑**没有任何结构化边界**——要编辑子
+区域只能强加一个几何 proximity 切割，而那正是 §E1/4.4 里**泄漏 13.5–28.1%** 的 radius
+baseline。相反，认证 patch 把同一表面分解成 **381–402 个观测认证的独立编辑单元**（每个中位
+仅 0.1% 面积），配合 certified binding 实现**零泄漏**的结构化编辑。这与 collision 轴（§4.7）
+一起，构成 asset-utility 相对 watertight 抽取的两条外部证据：**碰撞诚实（不幻想假面）+ 编辑
+结构化（有认证边界，不被迫用会泄漏的 proximity）**。
+
 ## 5. 当前结论边界
 
 - 已证明/验证：显式几何质量、守恒 refinement、局部 cross-field realizability

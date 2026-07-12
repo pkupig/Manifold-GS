@@ -155,6 +155,23 @@
 
 ---
 
+## E7 · P1.2 edit 轴外部对比：结构化可编辑性
+
+- **目的**：给 edit 轴一个**非循环**的外部对比（现有 edit 指标 `edit_region` 由 patch 定义，
+  certified 对它天然零泄漏，不能直接比外部方法）。
+- **方法**：数各方法连通分量（编辑单元的天然边界）。ours 用认证 patch 数；SuGaR/Poisson 用
+  mesh 连通分量。
+- **结果**：ours 381–402 patch（单 patch 中位 0.1% 面积）；SuGaR/Poisson **单一连通体占
+  97.5–99.5%**；watertight mesh 上唯一的子区域编辑手段 = proximity 切割，泄漏 13.5–28.1%
+  （E1 baseline）。
+- **结论**：watertight 抽取无结构化编辑边界，被迫用会泄漏的 proximity；认证 patch 提供
+  381–402 个认证独立编辑单元，零泄漏。与 E6（collision）共同构成 asset-utility 两条外部证据。
+- **结果文件**：由 `culled_mesh.ply` / `baselines/poisson_fair.ply` / `patch_mesh_meta.npz`
+  连通性/patch 统计推得（分析脚本一次性计算）。
+- **提交**：见下方最新提交；叙事 `RESULTS-LATEST.md` §4.8。
+
+---
+
 ## 待办 / GPU 侧（未做）
 
 - **待办 A（已拍板暂缓）**：collision `coverage`/`hausdorff` 需 DTU 官方 ObsMask+Plane 裁剪

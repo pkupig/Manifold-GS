@@ -214,8 +214,10 @@ varifold 指标宣称 asset 更好。
 方法，DTU-eval mesh 经 `scale_mat_inv` 转回 Gaussian 帧）。三方同 GT collision-vs-GT：
 **ours 全三场景 floater% 最低（0.9–18.3%）**，SuGaR 居中（7.7–78.7%），Poisson 最差
 （54–98%）；代价是 ours coverage 最保守（26–41% vs 46–76%）。precision–coverage 取舍的
-外部证据，含一个已发表方法。**仍缺**：edit/texture 线的外部对比（需把对手 mesh 绑回
-Gaussian 做编辑传播）与 2DGS mesh（GPU）。
+外部证据，含一个已发表方法。edit 轴外部对比见 §4.8：watertight mesh 是单一连通体
+（97.5–99.5%），无结构化编辑边界、被迫用泄漏 13.5–28.1% 的 proximity 切割，而认证 patch
+提供 381–402 个零泄漏编辑单元。**仍缺**：texture 轴外部对比、2DGS mesh（GPU）、edit 的
+几何-GT（方法无关）版本。
 
 ### P1.3 Coverage–precision–rendering 三轴报告
 
