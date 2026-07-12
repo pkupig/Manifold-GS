@@ -480,6 +480,37 @@ stl 自带法线直接复用。
 （完整 stl_total），需官方 **ObsMask + Plane 裁剪**才可比可入 gate；未裁前 benchmark 的
 collision 线保持 `skip`，不接入 overall。
 
+## 4.5 P0.1 实证：CPU 观测证据能否分离 GT 坐实的 floater（2026-07-13）
+
+用 §4.4 的 collision-vs-GT 把每个 collision patch 标为 **GT-floater**（>90% 面积 >1% bbox 离 GT）
+或 **GT-clean**（<10%），再回看其 per-patch 观测证据（导出时未被 gate 的字段）。样本：
+scan24 22 floater / 163、scan105 3 / 215、scan65 0 / 153。
+
+**分布级签名（scan24，floater 中位 vs clean 中位）：**
+
+| 证据字段 | floater | clean | 分离 |
+|---|---:|---:|---:|
+| median_first_hit_view_count | 11 | 34 | **−2.42σ** |
+| median_max_parallax_deg | 78.8 | 99.9 | −1.36σ |
+| median_photometric_std | 0.073 | 0.115 | −0.77σ（**反向**）|
+| sparse_supported_fraction | 0.60 | 0.65 | −0.34σ |
+| median_projection_radius_px | 15.0 | 10.9 | +0.08σ |
+
+两个要点：(1) **first-hit view count 是最强 CPU 判别信号**（floater 被更少相机首次命中，
+11 vs 34）；(2) **photometric std 反向**——floater 反而更"光度一致"（平滑 floater），
+正是它骗过 photometric gate 的原因，印证 P0.1 对 `patch_0027` 的论断，并解释了导出的
+sparse+photometric 双闸为何漏网。
+
+**但单门限无法无损清除：** 扫 `min_first_hit_views`——scan24 取 15 去掉 ~63% floater
+面积却误伤 2 个 clean、取 20 误伤 12 个；scan105 的 3 个 floater 门限 ≤15 一个都去不掉、
+=20 才去 1 个却误伤 5 个 clean；scan65（0 floater）门限 ≥20 纯误杀。**即现有 CPU 证据
+部分相关但不可分**。
+
+**结论（P0.1）**：GT-free 的 sparse+photometric 观测闸对"被相机看到但几何脱离真实表面"
+的 floater 只有部分区分力，无单一 CPU 门限可无损清除 → **实证了需要第二版 restricted-
+rendering Fisher/Jacobian 几何可识别性证书**（GPU，见 `ACTION-用户执行.md` A4）。未改任何
+冻结阈值；这是诊断，不是 gate 变更。
+
 ## 5. 当前结论边界
 
 - 已证明/验证：显式几何质量、守恒 refinement、局部 cross-field realizability
