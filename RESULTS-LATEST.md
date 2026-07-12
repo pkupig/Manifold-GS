@@ -544,25 +544,35 @@ pending 已标注，不含糊。这张表对应论文可主张的当前口径（
 extraction（open3d depth=9 + 密度分位 0.1 修剪 + 输入 bbox 裁剪，标准实践配置），再用
 §4.4 的同一 collision-vs-GT 指标与我们的 collision candidate 同场景对比。
 
+加了两个外部 baseline：**Poisson-from-3DGS**（同源定向点 `projected_points.ply`，open3d
+depth=9 + 密度分位 0.1 + 输入 bbox 裁剪）与**SuGaR native mesh**（已发表 surface-GS 方法，
+用其 DTU 评测的 `culled_mesh.ply`，DTU mm 帧经 `scale_mat_inv` 转回 Gaussian 帧）。三方同
+场景、同 GT、同 collision-vs-GT 口径对比：
+
 | 场景 | 方法 | 面数 | floater%（假面/unsupported area）| coverage@1% |
 |---|---|---:|---:|---:|
-| scan24 | ours | 6.6k | **18.3%** | 37.1% |
+| scan24 | **ours** | 6.6k | **18.3%** | 37.1% |
+| scan24 | sugar-culled | 26.6k | 78.7% | 69.8% |
 | scan24 | poisson | 17.6k | 98.5% | 51.5% |
-| scan65 | ours | 5.5k | **0.9%** | 26.3% |
+| scan65 | **ours** | 5.5k | **0.9%** | 26.3% |
+| scan65 | sugar-culled | 15.9k | 17.4% | 46.3% |
 | scan65 | poisson | 16.8k | 97.4% | 49.0% |
-| scan105 | ours | 11.2k | **1.5%** | 41.0% |
+| scan105 | **ours** | 11.2k | **1.5%** | 41.0% |
+| scan105 | sugar-culled | 79.0k | 7.7% | 51.9% |
 | scan105 | poisson | 68.3k | 54.1% | 75.9% |
 
-**结论（P1.2 / P1.3 precision–coverage 取舍的直接证据）：** 朴素 Poisson 靠 watertight
-封闭**幻想**出更高 coverage（49–76%），代价是 **54–98% 的面是假面**（封底/封背等扫描
-仪未见区域，且继承 splat floater）；我们的观测认证候选 coverage 保守（26–41%），但**假面
-仅 1–18%**。用于 physics/collision，假面即错误碰撞面——这正是本方法相对 watertight 抽取的
-价值主张：**同一 GT 下用 precision（诚实、不幻想碰撞面）换 coverage**，而非靠拒绝刷 Chamfer。
+**结论（P1.2 / P1.3 precision–coverage 取舍的外部证据）：** 我们的观测认证候选在**全部
+三场景 floater% 最低**（0.9–18.3%），甚至我们最脏的 scan24（18%）也远优于 SuGaR(78.7%)/
+Poisson(98.5%)。SuGaR（有 watertight regularization 的已发表方法）介于朴素 Poisson 与我们
+之间（7.7–78.7%），符合预期。代价是我们 coverage 最保守（26–41% vs SuGaR/Poisson 46–76%）：
+两个 baseline 靠 watertight 封闭刷高 coverage，但把大量扫描仪未见区域封成**假碰撞面**。用于
+physics/collision，假面即错误碰撞——这正是本方法的价值主张：**用 coverage 换诚实 precision，
+而非靠拒绝刷 Chamfer**，且对手含一个真正的已发表方法。
 
-口径说明：Poisson 的 candidate→GT p95 距离被 `projected_points` 远端 floater 撑到 >100%
-bbox（离群伪影），故 precision 主指标用稳健的**面积比 floater%** 而非距离尾。SuGaR mesh /
-2DGS 等 GPU baseline（mesh 已在盘或需训练）走同一 collision/edit/texture 口径，归 GPU 侧
-（见 `ACTION-用户执行.md`）。
+口径说明：precision 主指标用稳健的**面积比 floater%**（Poisson 的 candidate→GT p95 距离被
+`projected_points` 远端 floater 撑爆，属离群伪影）。SuGaR-culled 是 DTU-mask 过的物体级
+mesh（对 SuGaR 更有利，非稻草人）。edit/texture 线的外部 baseline（需把对手 mesh 绑回
+Gaussian 做编辑传播）与 2DGS 仍待补，见 `ACTION-用户执行.md`。
 
 ## 5. 当前结论边界
 
