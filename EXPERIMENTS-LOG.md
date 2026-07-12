@@ -206,6 +206,24 @@
 
 ---
 
+## E10 · asset 可用性演示：语义部件编辑
+
+- **目的**：第二个可用性演示（能被美术干净编辑）。
+- **命令**：`python scripts/demo_edit_propagation.py --seed-xyz 0.13 -0.17 -0.26
+  --select-radius 0.12 --prox-radius-frac 0.06 --rotate-deg 35`
+- **方法**：选密集区一簇 30 个认证 patch（2287 顶点）刚性旋转 35°；比 certified patch
+  binding vs proximity binding 的边界泄漏；出 before/after 图。CPU（复用 `edit_metrics.py`）。
+- **结果**：certified 泄漏 **0.00%**（0 顶点）；proximity（6% bbox 选区）泄漏 **19.72%
+  = 3847 顶点**（比部件本身还多）。
+- **结论**：certified 精确移动语义部件、邻域零位移；proximity（watertight baseline 唯一
+  可用手段，见 E7）误拖近 20% mesh。零泄漏 edit 从数字落到可视编辑行为。与 E9 共同构成
+  asset 可用性的两个 CPU 端到端演示。
+- **结果文件**：`$OUT/edit_demo/edit_propagation.json`、`edit_before_after.png`；入库副本
+  `figures/edit_demo/`。
+- **提交**：见下方最新提交；叙事 `RESULTS-LATEST.md` §4.11。
+
+---
+
 ## 待办 / GPU 侧（未做）
 
 - **待办 A（已拍板暂缓）**：collision `coverage`/`hausdorff` 需 DTU 官方 ObsMask+Plane 裁剪

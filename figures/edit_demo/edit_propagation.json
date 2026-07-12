@@ -1,0 +1,48 @@
+{
+  "bundle": "/root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset",
+  "selected_patches": [
+    3,
+    5,
+    15,
+    19,
+    20,
+    74,
+    85,
+    89,
+    122,
+    140,
+    142,
+    145,
+    148,
+    166,
+    168,
+    180,
+    191,
+    196,
+    200,
+    204,
+    221,
+    226,
+    233,
+    235,
+    246,
+    278,
+    316,
+    353,
+    355,
+    386
+  ],
+  "edited_vertices": 2287,
+  "total_vertices": 21796,
+  "rotate_deg": 35.0,
+  "bbox_diag": 1.849997955881315,
+  "certified": {
+    "leaked_point_fraction": 0.0,
+    "boundary_leakage_mean_pctbbox": 0.0
+  },
+  "proximity": {
+    "leaked_point_fraction": 0.19719104003280538,
+    "boundary_leakage_mean_pctbbox": 0.827840153460005,
+    "leaked_vertices": 3847
+  }
+}
