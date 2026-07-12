@@ -209,6 +209,13 @@ DTU anchor 只有两个正式 replication 场景。至少需要：
 同一 asset task 上比较。不能继续把内部 `tangent` ablation 当外部 baseline，也不能仅靠
 varifold 指标宣称 asset 更好。
 
+2026-07-13 增量：补上**首个真外部 asset baseline = Poisson-from-3DGS**（CPU，见
+`RESULTS-LATEST.md` §4.7）。同源定向点做 Poisson watertight，与我们的 collision candidate
+同 GT 对比：Poisson 靠 watertight 封闭刷高 coverage（49–76%）但假面 54–98%；我们 coverage
+保守（26–41%）而假面仅 1–18%。这是 precision–coverage 取舍的直接外部证据。**仍缺** SuGaR
+mesh binding 与一个 surface-GS 方法在 edit/collision/texture 同口径下的对比（GPU，SuGaR
+native mesh 已在盘，可直接送同一 collision 线）。
+
 ### P1.3 Coverage–precision–rendering 三轴报告
 
 认证方法可以通过拒绝更多区域轻易降低 Chamfer。主表必须同时报告：
