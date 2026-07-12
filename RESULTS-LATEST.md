@@ -615,6 +615,30 @@ texture 的外部对比（把 baseline mesh 强加一个 charting）与 edit 几
 **charting 决定保真度（per-patch 必要），颜色源决定 seam（多视 > SH-DC，shared atlas 修不动
 seam）**——texture 的两个杠杆各司其职，论文口径应如此陈述。
 
+## 4.10 asset 可用性演示：物理 phantom-collision（CPU，2026-07-13）
+
+回应「光有指标证明不了能当 asset 用」：做一个直接的**物理演示**——把 collision mesh 当刚体
+碰撞体，量它在自由空间（远离真实 GT 表面处）**误挡**的比例（`phantom_collision_rate` = 一个
+物理探针会撞进虚空的概率）。CPU/无头（numpy+scipy+matplotlib）。脚本
+`scripts/demo_collision_physics.py`。
+
+| 场景 | ours | sugar | poisson |
+|---|---:|---:|---:|
+| scan24 | **0.10%** | 3.58% | 6.50% |
+| scan65 | **0.00%** | 0.36% | 5.97% |
+| scan105 | **0.00%** | 0.05% | 2.90% |
+
+**结论**：我们的 mesh 几乎从不挡空处（0–0.1%），扔向资产的物体只会与真实物体接触；Poisson
+有 **2.9–6.5% 的自由空间是幻影碰撞**（撞到 watertight 封闭出的虚空盖子/floater），SuGaR
+0.05–3.58%。横截面图（`figures/physics_demo/<scan>_cross_section.png`）可视化了这点：Poisson
+的红色候选面糊满物体与背景之间的空处，而 ours/SuGaR 局限在物体区。
+
+诚实边界：(1) vs Poisson 碾压，vs SuGaR 在简单场景（scan65/105）较接近，但 ours 仍是唯一
+≈0% 的；(2) `phantom_collision`（自由空间体积被误挡）与 §4.7 的 `floater%`（mesh 面积偏离
+GT）测不同东西——scan24 floater 18% 但 phantom 仅 0.10%，因为那些 floater patch 面积有、
+占的自由空间体积小；物理最相关的是 phantom-collision，据此三场景 ours 全 ≤0.10%。这是把
+「collision precision」翻译成「物理行为正确」的端到端证据（P0.4/P1.2 的实用价值落地）。
+
 ## 5. 当前结论边界
 
 - 已证明/验证：显式几何质量、守恒 refinement、局部 cross-field realizability

@@ -1,0 +1,50 @@
+[
+  {
+    "scene": "scan24",
+    "tol_pctbbox": 1.0,
+    "ours": {
+      "free_probes": 111718,
+      "phantom_collision_rate": 0.00101147532179237
+    },
+    "poisson": {
+      "free_probes": 111718,
+      "phantom_collision_rate": 0.06498505164789918
+    },
+    "sugar": {
+      "free_probes": 111718,
+      "phantom_collision_rate": 0.03575072951538696
+    }
+  },
+  {
+    "scene": "scan65",
+    "tol_pctbbox": 1.0,
+    "ours": {
+      "free_probes": 106461,
+      "phantom_collision_rate": 0.0
+    },
+    "poisson": {
+      "free_probes": 106461,
+      "phantom_collision_rate": 0.05965564854735537
+    },
+    "sugar": {
+      "free_probes": 106461,
+      "phantom_collision_rate": 0.0035975615483604326
+    }
+  },
+  {
+    "scene": "scan105",
+    "tol_pctbbox": 1.0,
+    "ours": {
+      "free_probes": 107336,
+      "phantom_collision_rate": 1.8633077439069838e-05
+    },
+    "poisson": {
+      "free_probes": 107336,
+      "phantom_collision_rate": 0.028983751956473132
+    },
+    "sugar": {
+      "free_probes": 107336,
+      "phantom_collision_rate": 0.0005310427070134903
+    }
+  }
+]

@@ -188,6 +188,24 @@
 
 ---
 
+## E9 · asset 可用性演示：物理 phantom-collision
+
+- **目的**：证明输出**能当 asset 用**（指标之外的端到端演示）——把 collision mesh 当刚体
+  碰撞体，看物体会不会撞进虚空。
+- **命令**：`python scripts/demo_collision_physics.py --n-probes 120000`
+- **方法**：自由空间撒探针（远离 GT 表面），量每个 mesh 有多少探针落在其接触容差内
+  （= 幻影碰撞）；并出横截面图。CPU（numpy+scipy+matplotlib Agg）。
+- **结果**（phantom-collision rate，越低越好）：ours scan24/65/105 = 0.10/0.00/0.00%；
+  SuGaR = 3.58/0.36/0.05%；Poisson = 6.50/5.97/2.90%。
+- **结论**：ours 几乎不挡空处 → 物理体只与真实物体接触；Poisson 2.9–6.5% 幻影碰撞；SuGaR 居中。
+  横截面图直观展示 Poisson 糊满空处。注意 phantom-collision（体积）≠ floater%（面积）：scan24
+  floater 18% 但 phantom 仅 0.1%。这是「collision precision → 物理正确」的端到端实用价值证据。
+- **结果文件**：`$OUT/physics_demo/phantom_collision.json`、`<scan>_cross_section.png`；
+  入库副本 `figures/physics_demo/`。
+- **提交**：见下方最新提交；叙事 `RESULTS-LATEST.md` §4.10。
+
+---
+
 ## 待办 / GPU 侧（未做）
 
 - **待办 A（已拍板暂缓）**：collision `coverage`/`hausdorff` 需 DTU 官方 ObsMask+Plane 裁剪
