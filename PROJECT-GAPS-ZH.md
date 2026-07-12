@@ -218,6 +218,12 @@ varifold 指标宣称 asset 更好。
 - appearance：held-out PSNR/SSIM/LPIPS；
 - asset utility：edit/collision/baking 指标。
 
+2026-07-13 增量：三场景（scan24/65/105）主表骨架已拼出 CPU 三轴（识别率/surface area、
+collision precision floater+p95+normal、asset-utility edit/texture），见 `RESULTS-LATEST.md`
+§4.6。coverage(recall) 待 ObsMask 裁剪（待办 A），appearance held-out 渲染待 GPU；两轴已在
+表中标 pending。识别率保守（42–58% patches / 50–62% area），precision 轴清晰区分 scan24
+floater 簇（18.3% unsupported area）与干净的 scan65/105（<2%）。
+
 ## 五、P2：可延后内容
 
 - GLB/glTF 正式封装、材质规范和引擎插件；

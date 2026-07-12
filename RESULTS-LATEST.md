@@ -511,6 +511,31 @@ sparse+photometric 双闸为何漏网。
 rendering Fisher/Jacobian 几何可识别性证书**（GPU，见 `ACTION-用户执行.md` A4）。未改任何
 冻结阈值；这是诊断，不是 gate 变更。
 
+## 4.6 P1.3 三轴主表骨架（scan24/65/105，CPU 部分，2026-07-13）
+
+把前几节散落的结果收敛成论文 P1.3 主表形态。识别、precision、asset-utility 三轴已有真实
+CPU 数；coverage(recall) 待 ObsMask 裁剪（待办 A），appearance 待 GPU held-out 渲染。
+
+| 轴 | 指标 | scan24 | scan65 | scan105 |
+|---|---|---|---|---|
+| 识别 | patches identified% | 48.3% | 42.1% | 58.2% |
+| 识别 | identified surface area% | 54.2% | 49.5% | 61.9% |
+| 识别 | rejected: sparse / photo | 175 / 22 | 206 / 20 | 139 / 29 |
+| precision | collision floater%（unsupported area）| **18.25%** | 0.87% | 1.54% |
+| precision | candidate→GT p95（%bbox）| 5.13% | 0.66% | 0.50% |
+| precision | normal median（°）| 49.5 | 51.7 | 52.2 |
+| asset-util | edit leak reduction | 0.147 | 0.281 | 0.135 |
+| asset-util | texture round-trip PSNR | 30.1 dB | 35.3 dB | 33.7 dB |
+| coverage(recall) | completeness vs GT | pending A | pending A | pending A |
+| appearance | held-out PSNR/SSIM/LPIPS | pending GPU | pending GPU | pending GPU |
+
+**读法：**(1) 认证是保守的——三场景只识别 42–58% 的 patch（surface area 50–62%），其余按
+sparse/photometric 证据拒绝，符合"realizability-aware backbone"的保守口径。(2) precision 轴
+把 scan24 的 floater 簇（18.25% unsupported area）与干净的 scan65/105（<2%）清晰分开，正是
+P1.3 要求的"不能靠拒绝更多区域来刷 Chamfer"——precision 与识别率同表暴露质量差异。(3) 两轴
+pending 已标注，不含糊。这张表对应论文可主张的当前口径（`PROJECT-GAPS-ZH.md` 六）：保守几何
+表示 + realizability-aware backbone，且实证 observation support 仍不足以完全 GT 识别。
+
 ## 5. 当前结论边界
 
 - 已证明/验证：显式几何质量、守恒 refinement、局部 cross-field realizability
