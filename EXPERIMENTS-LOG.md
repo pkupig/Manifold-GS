@@ -172,6 +172,22 @@
 
 ---
 
+## E8 · texture 轴：per-patch charting 必要性消融
+
+- **目的**：texture 外部对比需给 baseline mesh 强加 charting（有争议，同 edit 几何-GT），
+  改做可辩护消融——per-patch vs single-chart（整物体一张切平面）。
+- **方法**：per-patch = 各 patch 烘 res32 切平面纹理取 PSNR 均值；single-chart = 全部
+  attached 点当一个 chart，测 res32 与总纹素匹配（res≈32·√#patches）两档。
+- **结果**：per-patch 30–35 dB；single-chart@32 仅 11–16 dB；single-chart@纹素匹配 18–25 dB
+  ——**同总纹素预算下 per-patch 仍领先 6–15 dB**。
+- **结论**：单切平面无法表示曲面/闭合面（对侧点塌到同一 UV），拓扑限制非分辨率 →
+  **per-patch charting 对纹理保真必要**。与 §4.1 互补：charting 决定保真、颜色源决定 seam。
+- **结果文件**：由 `attached_gaussians.ply` + `asset_mapping.npz[attached_patch_ids]` 推得
+  （分析脚本一次性计算）。
+- **提交**：见下方最新提交；叙事 `RESULTS-LATEST.md` §4.9。
+
+---
+
 ## 待办 / GPU 侧（未做）
 
 - **待办 A（已拍板暂缓）**：collision `coverage`/`hausdorff` 需 DTU 官方 ObsMask+Plane 裁剪
