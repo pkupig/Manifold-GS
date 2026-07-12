@@ -14,53 +14,58 @@
 - 长 GPU sweep、完整外部 baseline、批量真实场景和会产生大日志的任务先写入这里，
   经你执行后我负责汇总、诊断和写论文。
 
-## ⭐ 当前待你执行（2026-07-10 更新，先看这段）
+## ⭐ 当前待你执行（2026-07-13 更新，先看这段）
 
-经过盘上核查：三个真实场景（scan24/65/105）的 `vanilla_matched` **7000 步 checkpoint 与
-trained ply 都已在盘**，DTU 官方 GT stl 也在盘（`.../dtu-official/Points/Points/stl/stlNNN_total.ply`）。
-因此 bundle 导出、多场景 asset benchmark、以及 P0.4 collision-vs-GT **都是 CPU 任务，Codex
-可自己做，不需要你**。真正只有你能做的仅剩 1 件（下面 ☑A1）。
+**CPU 侧的 asset-utility 实验这条线已整体收口并全部 push。** 代码/文档/论文在
+`pkupig/Manifold-GS` 分支 `a5-asset-benchmark-3scene`（12 commit，领先 main 12）；实验
+产物（bundle、评测、对比、图、GLB、GT）在新仓库 `pkupig/emgs_experience`（~110MB，训练
+checkpoint 因超 100MB 未入）。**只剩下面 3 件需要你或你的 GPU/GUI 机器。**
 
-### ☑ A1（只有你能做）：Blender 人工导入检查——需一台带 GUI 的 Blender 机器
+### ☑ 你的待办 1（只有你能做，最重要）：Blender 人工导入检查（A1）
 
-本 3090 无头，Codex 做不了。用**真实 scan105 bundle**做（比 sphere 更有说服力）。
+本 3090 无头（连 open3d 离屏渲染都缺 libEGL），必须在你**带 GUI 的机器**上做。素材已备好、
+可直接用一个文件：
 
-- 源目录（在本 3090 上，下载到你本地 Blender 机器）：
-  `/root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/`
-- 需要文件：`certified_patches.obj` + 同目录 `certified_patches.mtl`、`collision_candidate.ply`
-  （可选 `attached_gaussians.ply`）。
-- 步骤：① 导入 OBJ 无报错；② Outliner / material slots 能看到分 patch 分组；③ 再导入
-  `collision_candidate.ply`，确认与主体空间对齐、无明显跨面长三角（开放边界允许存在）；
-  ④ 存 `blender_import_check.blend`，截 solid + wireframe 两图。
-- **验收 & 回报：**导入无报错、两层空间对齐、无长跨面 → 回一句 "PASS"；否则贴报错文本。
-- 完整版细则见下方 Action A1。
+- **最省事**：从 `emgs_experience` 仓库下载
+  `dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/asset_glb/scan105_hybrid_asset.glb`，
+  直接拖进 Blender（File ▸ Import ▸ glTF 2.0）。它含两节点：`certified_patches`（按 patch
+  着色的认证网格）+ `collision_candidate`（半透明碰撞代理）。
+- **或用 OBJ**：同目录 `certified_patches.obj` + `certified_patches.mtl`，再单独导
+  `collision_candidate.ply`。
+- **检查**：① 导入无报错；② Outliner/material 能看到分 patch 分组；③ 认证网格与碰撞代理
+  空间对齐、无明显跨面长三角（开放边界允许）。
+- **回报**：无报错、两层对齐、无长跨面 → 回一句 "PASS"；否则贴报错。这是论文里“美术真的能
+  导入使用”的关键证据，只差这一步。
 
-### ✅ 三项决定已推进（2026-07-13，Codex）
+### ☑ 你的待办 2（GPU，可选，补外观轴）：held-out 渲染对比
 
-1. **scan24/65 hybrid_asset bundle 已导出**（复刻 scan105 冻结口径：evidence + 相对 p90
-   photometric gate），落在 `.../scanNN_vanilla_matched/hybrid_asset/`。
-2. **三场景 asset benchmark 表已生成**（`experiments/asset_table.md` / `.csv`）：
-   scan24/65/105 的 edit、texture 两线全 **PASS**（certified 泄漏恒 0；baseline 泄漏
-   0.135–0.281；往返 PSNR 30.1–35.3 dB）。
-3. **P0.4 坐标对齐已解决且是确定性的**：预处理 `cameras.npz` 的 `scale_mat` 即
-   归一化↔DTU毫米帧 相似变换，**无需 ICP**；scan105 上重建→变换后 stl 最近邻中位残差
-   **0.04% bbox**。collision 精度侧极好（floater 1.5%、候选→GT 中位 0.06% bbox）。
+论文 P1.3 主表的 **appearance 轴**（held-out PSNR/SSIM/LPIPS）需要在 GPU 上渲染 held-out
+视角。若要补这一轴，用现有 `*_vanilla_matched` 与 anchored/manifold checkpoint 渲染 test
+split 并出 PSNR/SSIM/LPIPS。不做也不影响现有 claim（现有是 mesh/几何/asset-utility 侧）。
 
-> **待办 A（已拍板：保留、暂不做，不影响文章贡献/质量）**：collision 的 `coverage`(recall)
-> 现用完整 stl_total 被 DTU 背景底盘拉低（scan105 @1% 仅 0.41，容差加大也卡在 ~0.53）。
-> 要得到可比、可入 gate 的 coverage 需套 **DTU 官方 ObsMask + Plane 裁剪**
-> （`ObsMask105_10.mat` + `Plane105.mat` 已在盘）。在实现该裁剪前，benchmark 的 collision
-> 线保持 `skip`（不把未裁剪 coverage 接入 gate，避免误判 overall FAIL）。
+### ☑ 你的待办 3：审阅论文 `PAPER-ZH.md` §7.8（新增）
 
-### ✅ 已完成（Codex，无需你动手）
+新增 §7.8「真实多场景 asset-utility、外部对照与可用性演示」，已把本轮全部结果写进论文，
+并更新 §9 局限性。请审阅措辞与 claim 边界。
 
-- **A5 asset benchmark 协议已冻结（`asset-benchmark/1.0`）**：唯一命令
-  `scripts/run_asset_benchmark.py` + 表格生成器 `scripts/summarize_asset_benchmark.py` +
-  冻结阈值 `manifold_gs/asset_benchmark.py`；58 项 CPU 测试全过。真实 scan105 已实跑
-  **edit PASS / texture PASS / collision skip(无GT)**，结果在
-  `.../scan105_vanilla_matched/hybrid_asset/asset_eval/asset_benchmark.json`。细则见下方 Action A5。
-- 上一轮 asset-utility 度量、A3 真实 DTU photometric、identifiability gate 均已提交
-  （commit `22ee3d2` / `2e29984`）。
+> **待办 A（已拍板：保留、暂不做）**：collision 的 `coverage`(recall) 现用完整 stl_total 被
+> DTU 背景底盘拉低。要可比 coverage 需套 **DTU 官方 ObsMask + Plane 裁剪**（`ObsMask105_10.mat`
+> + `Plane105.mat` 已在盘）。未裁前 benchmark collision 线保持 `skip`。你想做时说一声，Codex
+> CPU 即可完成。
+
+### ✅ 已完成（Codex，2026-07-13，无需你动手；细节见 `EXPERIMENTS-LOG.md` E1–E11）
+
+1. **三场景 bundle + 冻结 benchmark**：scan24/65/105 edit/texture 全 **PASS**（certified
+   泄漏恒 0，baseline 0.135–0.281；往返 30.1–35.3 dB）。
+2. **P0.4 碰撞 GT 对齐（确定性）**：预处理 `cameras.npz` 的 `scale_mat`，无需 ICP，残差
+   <0.1% bbox。
+3. **外部对照（P1.2）**：vs Poisson-from-3DGS 与 **SuGaR native mesh**（已发表方法）——假
+   碰撞面 ours 0.9–18% < SuGaR 8–79% < Poisson 54–98%；edit 结构化、texture charting 必要。
+4. **P0.1 诊断**：实证仅 sparse+photometric 观测门限不足以完全 GT 识别，需 Fisher 证书（A4/GPU）。
+5. **可用性演示**：物理 phantom-collision（ours ≤0.10% vs Poisson 2.9–6.5%）、语义部件编辑
+   （certified 泄漏 0% vs proximity 19.7%）、**引擎级 GLB 封装**（三场景）。
+6. **论文 §7.8 + §9 已更新**；产物已 push 到 `emgs_experience`。
+- 更早：A5 协议冻结、A3 photometric、identifiability gate（commit `22ee3d2` / `2e29984`）。
 
 （下面是完整历史账本，各 Action 的最终状态见各自小节。）
 
