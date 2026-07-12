@@ -224,6 +224,19 @@
 
 ---
 
+## E11 · asset 可用性演示：引擎级 GLB 封装
+
+- **目的**：产出可直接拖进 Blender/Unity/Godot 的标准资产文件（可用性最硬交付物）。
+- **命令**：`python scripts/package_asset_glb.py`
+- **方法**：把 bundle 封装为 `.glb` 场景，含两节点——`certified_patches`（认证网格按 patch
+  确定性调色板着色）+ `collision_candidate`（半透明碰撞代理）。trimesh 导出 + round-trip 校验。
+- **结果**：三场景 glb 各 580 KB–1 MB，2 节点，faces 26k–47k，回读校验通过。
+- **结果文件**：`$OUT/<scan>_vanilla_matched/hybrid_asset/asset_glb/<scan>_hybrid_asset.glb`；
+  入库副本 `assets/glb/`。
+- **提交**：见下方最新提交；论文 §7.8。
+
+---
+
 ## 待办 / GPU 侧（未做）
 
 - **待办 A（已拍板暂缓）**：collision `coverage`/`hausdorff` 需 DTU 官方 ObsMask+Plane 裁剪

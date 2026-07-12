@@ -63,7 +63,11 @@
       "Bash(git commit *)",
       "Bash(echo \"EXIT=$?\")",
       "Bash(git checkout *)",
-      "Bash(jobs -l)"
+      "Bash(jobs -l)",
+      "Bash(cp /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/physics_demo/*.png figures/physics_demo/)",
+      "Bash(cp /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/physics_demo/phantom_collision.json figures/physics_demo/)",
+      "Bash(cp /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/edit_demo/edit_before_after.png figures/edit_demo/)",
+      "Bash(cp /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/edit_demo/edit_propagation.json figures/edit_demo/)"
     ]
   }
 }

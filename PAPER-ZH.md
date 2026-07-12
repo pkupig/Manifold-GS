@@ -473,6 +473,45 @@ replication 统计。
 损失 held-out PSNR。它不恢复 RGB-only claim，也不构成相对 2DGS、SuGaR、GeoSplat
 或其他 SOTA 的总体领先结论。
 
+### 7.8 真实多场景 asset-utility、外部对照与可用性演示
+
+我们把冻结协议 `asset-benchmark/1.0` 扩展到三个真实 DTU 场景（scan24/65/105），并补齐
+§7.5 列出的三项缺口：多场景表、碰撞 GT、外部 binding 对照，另加两个端到端可用性演示与
+引擎级封装。全部 CPU、可复现（脚本随附）。
+
+**多场景 benchmark（P0.3/P0.5）。** 三场景编辑与纹理两线均 **PASS**：certified 编辑绑定
+跨边界泄漏恒为 0，而 proximity baseline 泄漏 0.135/0.281/0.135；逐 patch 纹理 round-trip
+为 30.1/35.3/33.7 dB。识别是保守的——每场景仅 42–58% 的 patch（表面积 50–62%）通过
+observation 认证，其余按 sparse/photometric 证据拒绝。
+
+**碰撞 GT 对齐是确定性的。** DTU 官方 stl（mm，DTU 世界帧）到 Gaussian/重建帧的变换即
+预处理 `cameras.npz` 中的 `scale_mat` 相似变换，无需 ICP；三场景重建网格到变换后 stl 的
+最近邻中位残差均 $<0.1\%$ bbox（scan105 为 0.04%）。
+
+**外部对照（P1.2）。** 与 Poisson-from-3DGS（同源定向点）和 SuGaR native culled mesh
+（已发表 surface-GS 方法）在同一 collision-vs-GT 口径下比较。以假碰撞面（远离 GT 的候选
+表面积占比，越低越好）计：本文 0.9–18.3%，SuGaR 7.7–78.7%，Poisson 54.1–98.5%——本文在
+全部三场景最低，代价是最保守的 coverage（26–41% vs 46–76%）。两个 baseline 靠 watertight
+封闭刷高 coverage，却把大量未观测区域封成假碰撞面。编辑轴的结构证据：Poisson/SuGaR 的
+watertight mesh 是单一连通体（占 97.5–99.5% 三角形），无结构化编辑边界，子区域编辑只能退回
+会泄漏 13.5–28.1% 的 proximity 切割；而本文提供 381–402 个观测认证的独立编辑单元。纹理轴
+消融：即便给单张切平面 chart 相同的总纹素预算，逐 patch charting 仍领先 6–15 dB，因为单一
+切平面无法表示曲面（拓扑限制而非分辨率）。
+
+**identifiability 的负面证据（P0.1）。** 用三场景 collision-vs-GT 标注 GT-floater，回看其
+观测证据：first-hit view count 是最强 CPU 判别信号（floater 中位 11 vs clean 34），而
+photometric std 反向（floater 反而更“光度一致”），但无单一 CPU 门限可无损清除它们。这从
+真实数据坐实了：仅靠 sparse+photometric 观测门限不足以完全 GT 识别，需要 §5 所述基于
+restricted rendering Jacobian/Fisher 的第二版几何可识别性证书。
+
+**可用性演示。** 我们给出两个端到端演示，把指标翻译成资产行为。其一，物理 phantom-collision：
+把碰撞网格作刚体碰撞体，量自由空间中被误挡的探针比例——本文 0.00–0.10%，SuGaR 0.05–3.58%，
+Poisson 2.90–6.50%，即物体只与真实几何接触而不撞入虚空。其二，语义部件编辑：选定一簇 30 个
+认证 patch（2287 顶点）刚性旋转 35°，certified 绑定泄漏 0%，而 proximity 绑定误拖 3847 个
+相邻顶点（19.7%）。最后，我们将 bundle 封装为引擎级 `.glb`（认证网格按 patch 着色 + 半透明
+碰撞代理两节点），可直接导入 Blender/Unity/Godot。仍属用户侧 GPU/GUI 的 Blender 人工导入与
+经渲染器的 held-out 外观对比，是定稿前的剩余项。
+
 ## 8. 讨论
 
 实验揭示了三个层次不可互换。第一，thin covariance 是 primitive-level property；
@@ -502,14 +541,15 @@ regularizer。
 - 当前 SuGaR 仅为缩减 pilot，GeoSplat 缺同协议实现；仍需完整预算、多 seed、统一
   extractor 的外部 baseline。
 - Curve/volume mixed-dimensional 分支已有表示接口，但尚无足够实验支撑为主贡献。
-- 当前 asset 输出缺少 UV/material baking、collision proxy、编辑传播与标准 GLB/OBJ
-  封装；“asset-ready backbone”与“可直接用于生产的 asset”之间仍有工程和实验缺口。
-- asset-utility 度量（编辑/collision/texture）虽已实现、固化为带 PASS/FAIL 的冻结协议
-  （`asset-benchmark/1.0`）并在 sphere 与真实 scan105 上运行（scan105 编辑/纹理两线 PASS），
-  但首批结果显示 collision 的高 false-surface 与 texture seam 这两个表观弱点主要由评测
-  口径决定（tolerance 相对方法精度过紧、观测颜色源为噪声 SH-DC），真实杠杆是几何精度
-  与多视颜色质量；真正的 UV atlas、经渲染器的 round-trip PSNR/SSIM、碰撞 GT 与外部 binding
-  对照仍缺。
+- asset 输出现已具备 collision proxy、编辑传播、逐 patch 材质与标准 GLB/OBJ 封装
+  （§7.8），但仍缺完整 UV atlas material baking；“asset-ready backbone”与“可直接用于
+  生产的 asset”之间仍有 UV/材质与引擎内验证的缺口。
+- asset-utility 度量（编辑/collision/texture）已固化为带 PASS/FAIL 的冻结协议
+  （`asset-benchmark/1.0`）并在 sphere 与三个真实场景（scan24/65/105）上运行，编辑/纹理
+  两线全 PASS；碰撞 GT 已通过 `cameras.npz` 的 `scale_mat` 确定性对齐补齐，并完成与
+  Poisson/SuGaR 的外部 collision 对照（§7.8）。仍缺：经渲染器的 held-out round-trip
+  PSNR/SSIM/LPIPS（外观轴，需 GPU）、完整 UV atlas、DTU 官方 ObsMask 裁剪下的 coverage
+  召回口径，以及带 GUI 的引擎/Blender 人工导入验证。
 
 **本文刻意不主张的命题（边界，而非待补实验）。** 为避免过度声明，以下两点不作为本文 claim：
 （i）RGB-only 普遍优于 2DGS/SuGaR/GeoSplat——本文自身的 DTU 证据反对该命题（无 anchor
