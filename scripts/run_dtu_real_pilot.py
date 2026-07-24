@@ -39,7 +39,7 @@ def main() -> None:
         ),
         action="append",
     )
-    parser.add_argument("--stage", choices=("train", "evaluate", "all"), default="all")
+    parser.add_argument("--stage", choices=("train", "evaluate", "render", "all"), default="all", help="evaluate = legacy geometry+render; render = held-out images/metrics only")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--eval-python", default=sys.executable)
@@ -105,14 +105,19 @@ def main() -> None:
                         train_command.extend(["--start_checkpoint", str(latest)])
                         print(f"[resume checkpoint] {latest}")
                 run(train_command, execute=args.execute, output=ply, resume=args.resume)
-            if "evaluate" not in stages:
+            if not ({"evaluate", "render"} & stages):
                 continue
-            asset = output / "asset"
-            mesh = asset / "patch_mesh.ply"
-            run([
-                sys.executable, "scripts/project_manifold.py", "--ply", str(ply),
-                "--out", str(asset), "--knn", "20",
-            ], execute=args.execute, output=mesh, resume=args.resume)
+            # ``render`` is intentionally independent of asset projection: held-out
+            # appearance metrics only need the trained Gaussian checkpoint.  Keep
+            # ``evaluate`` as the legacy full geometry + render path.
+            mesh = None
+            if "evaluate" in stages:
+                asset = output / "asset"
+                mesh = asset / "patch_mesh.ply"
+                run([
+                    sys.executable, "scripts/project_manifold.py", "--ply", str(ply),
+                    "--out", str(asset), "--knn", "20",
+                ], execute=args.execute, output=mesh, resume=args.resume)
             rendered = output / "test/ours_7000"
             run([
                 sys.executable, "third_party/gaussian-splatting/render.py",
@@ -124,12 +129,14 @@ def main() -> None:
                 "--renders", str(rendered / "renders"), "--gt", str(rendered / "gt"),
                 "--out", str(output / "heldout_metrics.json"),
             ], execute=args.execute, output=output / "heldout_metrics.json", resume=args.resume)
-            dtu_output = output / "dtu_evaluation"
-            run([
-                args.eval_python, str(EVAL), "--input_mesh", str(mesh),
-                "--scan_id", str(scan), "--output_dir", str(dtu_output),
-                "--mask_dir", str(data_root), "--DTU", str(official_root),
-            ], execute=args.execute, output=dtu_output / "results.json", resume=args.resume)
+            if "evaluate" in stages:
+                assert mesh is not None
+                dtu_output = output / "dtu_evaluation"
+                run([
+                    args.eval_python, str(EVAL), "--input_mesh", str(mesh),
+                    "--scan_id", str(scan), "--output_dir", str(dtu_output),
+                    "--mask_dir", str(data_root), "--DTU", str(official_root),
+                ], execute=args.execute, output=dtu_output / "results.json", resume=args.resume)
 
 
 if __name__ == "__main__":

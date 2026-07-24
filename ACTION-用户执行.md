@@ -36,14 +36,14 @@ texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pil
 ### 待你执行 2：DTU held-out appearance 补测（GPU，建议做）
 
 **目的：**补 P1.3 主表的 held-out PSNR/SSIM；LPIPS 需另装/冻结感知模型，本轮不要混入。
-对每个已有 checkpoint，渲染固定 `test.txt` split，绝不重训、不覆盖 checkpoint：
+对每个已有 checkpoint，使用只渲染的 `render` 阶段跑固定 `test.txt` split；它不会调用 `project_manifold.py`、不会重训或覆盖 checkpoint：
 
 ```bash
 cd /root/autodl-tmp/E-Manifold-GS
 for scan in 24 65 105; do
   python scripts/run_dtu_real_pilot.py --scan "$scan" \
     --method vanilla_matched --method manifold_full --method manifold_colmap_anchor \
-    --stage evaluate --execute --resume
+    --stage render --execute --resume
 done
 ```
 
