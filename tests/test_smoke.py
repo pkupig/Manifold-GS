@@ -152,6 +152,8 @@ def test_visibility_evidence_counts_first_hit_over_occluded() -> None:
     evidence = compute_visibility_evidence(xyz, [camera], pixel_bin=4.0)
     assert evidence["first_hit_view_count"].tolist() == [1, 0, 1]
     assert evidence["occluded_view_count"].tolist() == [0, 1, 0]
+    assert evidence["first_hit_view_bits"].tolist() == [1, 0, 1]
+    assert evidence["first_hit_view_names"].tolist() == ["front.png"]
     assert evidence["visibility_support_kind"].item() == "first_hit_occlusion"
 
 

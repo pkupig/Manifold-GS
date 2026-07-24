@@ -198,9 +198,14 @@ def compute_visibility_evidence(
         raise ValueError("pixel_bin must be positive")
     xyz = np.asarray(xyz, dtype=np.float64)
     n = xyz.shape[0]
+    if len(cameras) > 64:
+        raise ValueError("first_hit_view_bits supports at most 64 training cameras")
     first_hit_count = np.zeros(n, dtype=np.int32)
     occluded_count = np.zeros(n, dtype=np.int32)
-    for camera in cameras:
+    # Bit i records that Gaussian i was first-hit visible in cameras[i].  The
+    # compact identity-preserving representation is required by Fisher v1.
+    first_hit_bits = np.zeros(n, dtype=np.uint64)
+    for camera_index, camera in enumerate(cameras):
         u, v, z, visible = _project_to_camera(xyz, camera)
         if not visible.any():
             continue
@@ -210,9 +215,12 @@ def compute_visibility_evidence(
             min_depth_margin=min_depth_margin,
         )
         first_hit_count[is_first_hit] += 1
+        first_hit_bits[is_first_hit] |= np.uint64(1) << np.uint64(camera_index)
         occluded_count[visible & ~is_first_hit] += 1
     return {
         "first_hit_view_count": first_hit_count.astype(np.int16),
+        "first_hit_view_bits": first_hit_bits,
+        "first_hit_view_names": np.asarray([camera.name for camera in cameras]),
         "occluded_view_count": occluded_count.astype(np.int16),
         "visibility_support_kind": np.asarray("first_hit_occlusion"),
         "visibility_pixel_bin": np.asarray(pixel_bin, dtype=np.float32),
