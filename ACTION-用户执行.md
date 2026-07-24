@@ -21,8 +21,9 @@ DTU GT 通过 `scale_mat` 确定性对齐；Poisson 与 SuGaR collision precisio
 texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pilot 均已完成。详情见
 `EXPERIMENTS-LOG.md` E1--E11。
 
-尚有 **4 条论文证据缺口**：coverage recall、appearance、2DGS 同资产口径、P0.1 Fisher 证书。
-其中仅前两项可以立刻交给你运行；后两项必须先由 Codex 冻结脚本，**现在不要自行跑**。
+尚有 **2 条主要证据缺口**：2DGS 同资产口径、P0.1 Fisher 证书。coverage 已完成官方裁剪诊断，
+appearance 已由现有三场 held-out 结果回填。Fisher **协议已冻结**（`FISHER-PROTOCOL-ZH.md`），
+但实现尚未完成，当前仍不要自行跑。
 
 ### 已完成：Blender GUI 导入验收（A1，用户确认 PASS）
 
@@ -33,30 +34,19 @@ texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pil
 
 **验收/回报：**满足以上三项则回报 `PASS`；否则附上 Blender 版本、报错文本和截图。
 
-### 待你执行 2：DTU held-out appearance 补测（GPU，建议做）
+### 已完成：DTU held-out appearance（固定 test split）
 
-**目的：**补 P1.3 主表的 held-out PSNR/SSIM；LPIPS 需另装/冻结感知模型，本轮不要混入。
-对每个已有 checkpoint，使用只渲染的 `render` 阶段跑固定 `test.txt` split；它不会调用 `project_manifold.py`、不会重训或覆盖 checkpoint：
-
-```bash
-cd /root/autodl-tmp/E-Manifold-GS
-for scan in 24 65 105; do
-  python scripts/run_dtu_real_pilot.py --scan "$scan" \
-    --method vanilla_matched --method manifold_full --method manifold_colmap_anchor \
-    --stage render --execute --resume
-done
-```
-
-**预期产物：**每个存在的 `<scan>_<method>/heldout_metrics.json`，并保留
-`test/ours_7000/{renders,gt}`。若某 method 缺 7k PLY，记录缺失路径后停止该 method，不要改参数
-或启动训练。完成后把 json 路径/末尾输出发我，我负责汇总、做 paired 比较并更新论文。
+现有三场 `vanilla_matched`/`manifold_full` 7k checkpoint 的 held-out 结果完整（均为固定
+`test.txt`，7/7/8 views），无需重跑：scan24 PSNR **30.967 → 30.856 dB**、SSIM
+**0.93489 → 0.93492**；scan65 **31.503 → 32.127 dB**、**0.97049 → 0.97228**；scan105
+**32.866 → 33.103 dB**、**0.96500 → 0.96533**。LPIPS 未纳入本轮冻结口径。
 
 ### 待 Codex 冻结后再交接：两个 GPU 实验（现在不要跑）
 
 1. **2DGS 同资产协议（P1.2）**：官方 2DGS DTU 输出尚缺 mesh/asset adapter 与统一 patch/UV
    语义，不能用现有 plane/torus 结果替代。
-2. **restricted-rendering Fisher/Jacobian（P0.1/A4）**：E4 已证实 sparse+photometric gate
-   无法无损排除 floaters，但 perturbation basis、appearance gauge、归一化与阈值尚未冻结。
+2. **restricted-rendering Fisher/Jacobian（P0.1/A4）**：协议 v1 已冻结于
+   `FISHER-PROTOCOL-ZH.md`；下一步是 Codex 按该协议实现，完成前不要手动跑 GPU sweep。
 
 ### 已完成：DTU 官方 ObsMask + Plane coverage 诊断（Codex CPU）
 

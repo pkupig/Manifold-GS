@@ -262,3 +262,9 @@
 
 - **结论**：官方裁剪确实移除了背景底盘混淆，但没有把三场 coverage 变成统一 PASS；按冻结 `asset-benchmark/1.0` 的 80%@≤3% 门槛，只有 scan105 可过，scan24/65 仍 FAIL。故 collision track 不接入三场 overall；论文应报告这是保守 precision 与 coverage 的真实取舍，而不是把未裁剪的低 coverage 归因于背景。
 - **结果文件**：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/collision_official_mask.json`。
+
+
+## E13 · P1.3 held-out appearance 回填 + P0.1 Fisher v1 协议冻结
+
+- **appearance 结果**（固定 `test.txt`）：scan24 vanilla/full PSNR = 30.967/30.856 dB、SSIM = 0.93489/0.93492；scan65 = 31.503/32.127、0.97049/0.97228；scan105 = 32.866/33.103、0.96500/0.96533。三场结果均已在 `$OUT/scanNN_{vanilla_matched,manifold_full}/heldout_metrics.json`，不重跑。
+- **Fisher 协议**：冻结为 `restricted-fisher/v1`，详见 `FISHER-PROTOCOL-ZH.md`：normal-only 中心差分、epsilon=0.5% bbox、冻结 appearance/shape/opacity、first-hit 训练视图、alpha mask、每视图最多 4096 像素、>=3 视图和>=256 像素、每场景 p10 Fisher 阈值。尚未实现/运行，不得将协议冻结误记为证书完成。

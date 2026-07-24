@@ -514,7 +514,7 @@ rendering Fisher/Jacobian 几何可识别性证书**（GPU，见 `ACTION-用户�
 ## 4.6 P1.3 三轴主表骨架（scan24/65/105，CPU 部分，2026-07-13）
 
 把前几节散落的结果收敛成论文 P1.3 主表形态。识别、precision、asset-utility 三轴已有真实
-CPU 数；coverage(recall) 待 ObsMask 裁剪（待办 A），appearance 待 GPU held-out 渲染。
+CPU 数；coverage(recall) 已完成 ObsMask+Plane 官方裁剪诊断，appearance 已由固定 held-out 结果回填。
 
 | 轴 | 指标 | scan24 | scan65 | scan105 |
 |---|---|---|---|---|
@@ -526,8 +526,8 @@ CPU 数；coverage(recall) 待 ObsMask 裁剪（待办 A），appearance 待 GPU
 | precision | normal median（°）| 49.5 | 51.7 | 52.2 |
 | asset-util | edit leak reduction | 0.147 | 0.281 | 0.135 |
 | asset-util | texture round-trip PSNR | 30.1 dB | 35.3 dB | 33.7 dB |
-| coverage(recall) | completeness vs GT | pending A | pending A | pending A |
-| appearance | held-out PSNR/SSIM/LPIPS | pending GPU | pending GPU | pending GPU |
+| coverage(recall) | official-mask @3% bbox | 75.2% | 64.4% | 88.9% |
+| appearance | held-out PSNR / SSIM | 30.856 / 0.93492 | 32.127 / 0.97228 | 33.103 / 0.96533 |
 
 **读法：**(1) 认证是保守的——三场景只识别 42–58% 的 patch（surface area 50–62%），其余按
 sparse/photometric 证据拒绝，符合"realizability-aware backbone"的保守口径。(2) precision 轴
