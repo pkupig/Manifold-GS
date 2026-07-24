@@ -16,6 +16,29 @@ ROOT = Path(__file__).resolve().parents[1]
 EVAL = ROOT / "third_party/2d-gaussian-splatting/scripts/eval_dtu/evaluate_single_scene.py"
 
 
+def resolve_workspace_path(value: str) -> Path:
+    """Resolve legacy /mnt/d/emgs-real paths after the workspace migration.
+
+    Checkpoints retain their original cfg_args, and local ignored protocols may
+    still name the old mount.  Prefer the configured path when it exists; when it
+    does not, map only the known project root to the current workspace root.
+    """
+    path = Path(value)
+    legacy = Path("/mnt/d/emgs-real")
+    current = Path("/root/autodl-tmp/emgs-real")
+    try:
+        suffix = path.relative_to(legacy)
+    except ValueError:
+        return path
+    migrated = current / suffix
+    # The old mount can still exist but contains stale metadata/checkpoints.  The
+    # current workspace is authoritative whenever its matching root is present.
+    if current.exists():
+        print(f"[path migration] {path} -> {migrated}", flush=True)
+        return migrated
+    return path
+
+
 def run(command: list[str], *, execute: bool, output: Path | None = None, resume: bool = False) -> None:
     if resume and output is not None and output.exists():
         print(f"[skip] {output}")
@@ -47,8 +70,8 @@ def main() -> None:
     protocol = json.loads(args.protocol.read_text(encoding="utf-8"))
     scans = args.scan or protocol["scans"]
     methods = args.method or ["vanilla", "manifold_full"]
-    data_root = Path(protocol["data_root"])
-    output_root = Path(protocol["output_root"]) / protocol["name"]
+    data_root = resolve_workspace_path(protocol["data_root"])
+    output_root = resolve_workspace_path(protocol["output_root"]) / protocol["name"]
     official_root = Path(protocol["official_gt_root"])
     ensure_dtu_official_layout(official_root)
     stages = {args.stage} if args.stage != "all" else {"train", "evaluate"}
