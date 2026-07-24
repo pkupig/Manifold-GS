@@ -1,6 +1,6 @@
 # 用户执行 Action
 
-更新日期：2026-07-03。这里只保留需要用户手动操作、耗时、占 GPU、需要联网、
+更新日期：2026-07-25。这里只保留需要用户手动操作、耗时、占 GPU、需要联网、
 会产生大量日志，或预计会显著消耗 token 的任务。短分析、代码修改、CPU 单测和
 小规模离线评测由 Codex 继续完成。
 
@@ -14,58 +14,60 @@
 - 长 GPU sweep、完整外部 baseline、批量真实场景和会产生大日志的任务先写入这里，
   经你执行后我负责汇总、诊断和写论文。
 
-## ⭐ 当前待你执行（2026-07-13 更新，先看这段）
+## ⭐ 当前收口清单（2026-07-25；只执行标为“待你执行”的项）
 
-**CPU 侧的 asset-utility 实验这条线已整体收口并全部 push。** 代码/文档/论文在
-`pkupig/Manifold-GS` 分支 `a5-asset-benchmark-3scene`（12 commit，领先 main 12）；实验
-产物（bundle、评测、对比、图、GLB、GT）在新仓库 `pkupig/emgs_experience`（~110MB，训练
-checkpoint 因超 100MB 未入）。**只剩下面 3 件需要你或你的 GPU/GUI 机器。**
+**已完成：**三场景（DTU scan24/65/105）bundle 与冻结 asset benchmark 的 edit/texture 全 PASS；
+DTU GT 通过 `scale_mat` 确定性对齐；Poisson 与 SuGaR collision precision、结构化 edit、
+texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pilot 均已完成。详情见
+`EXPERIMENTS-LOG.md` E1--E11。
 
-### ☑ 你的待办 1（只有你能做，最重要）：Blender 人工导入检查（A1）
+尚有 **4 条论文证据缺口**：coverage recall、appearance、2DGS 同资产口径、P0.1 Fisher 证书。
+其中仅前两项可以立刻交给你运行；后两项必须先由 Codex 冻结脚本，**现在不要自行跑**。
 
-本 3090 无头（连 open3d 离屏渲染都缺 libEGL），必须在你**带 GUI 的机器**上做。素材已备好、
-可直接用一个文件：
+### 待你执行 1：Blender GUI 导入验收（A1，最高优先级，10--20 分钟）
 
-- **最省事**：从 `emgs_experience` 仓库下载
-  `dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/asset_glb/scan105_hybrid_asset.glb`，
-  直接拖进 Blender（File ▸ Import ▸ glTF 2.0）。它含两节点：`certified_patches`（按 patch
-  着色的认证网格）+ `collision_candidate`（半透明碰撞代理）。
-- **或用 OBJ**：同目录 `certified_patches.obj` + `certified_patches.mtl`，再单独导
-  `collision_candidate.ply`。
-- **检查**：① 导入无报错；② Outliner/material 能看到分 patch 分组；③ 认证网格与碰撞代理
-  空间对齐、无明显跨面长三角（开放边界允许）。
-- **回报**：无报错、两层对齐、无长跨面 → 回一句 "PASS"；否则贴报错。这是论文里“美术真的能
-  导入使用”的关键证据，只差这一步。
+在带 GUI 的机器中，从 `pkupig/emgs_experience` 下载
+`dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/asset_glb/scan105_hybrid_asset.glb`，
+拖入 Blender（glTF 2.0）。检查导入无报错；Outliner/material 中可见按 patch 着色的
+`certified_patches` 与半透明 `collision_candidate`；两层对齐且没有明显跨面长三角。
 
-### ☑ 你的待办 2（GPU，可选，补外观轴）：held-out 渲染对比
+**验收/回报：**满足以上三项则回报 `PASS`；否则附上 Blender 版本、报错文本和截图。
 
-论文 P1.3 主表的 **appearance 轴**（held-out PSNR/SSIM/LPIPS）需要在 GPU 上渲染 held-out
-视角。若要补这一轴，用现有 `*_vanilla_matched` 与 anchored/manifold checkpoint 渲染 test
-split 并出 PSNR/SSIM/LPIPS。不做也不影响现有 claim（现有是 mesh/几何/asset-utility 侧）。
+### 待你执行 2：DTU held-out appearance 补测（GPU，建议做）
 
-### ☑ 你的待办 3：审阅论文 `PAPER-ZH.md` §7.8（新增）
+**目的：**补 P1.3 主表的 held-out PSNR/SSIM；LPIPS 需另装/冻结感知模型，本轮不要混入。
+对每个已有 checkpoint，渲染固定 `test.txt` split，绝不重训、不覆盖 checkpoint：
 
-新增 §7.8「真实多场景 asset-utility、外部对照与可用性演示」，已把本轮全部结果写进论文，
-并更新 §9 局限性。请审阅措辞与 claim 边界。
+```bash
+cd /root/autodl-tmp/E-Manifold-GS
+for scan in 24 65 105; do
+  python scripts/run_dtu_real_pilot.py --scan "$scan" \
+    --method vanilla_matched --method manifold_full --method manifold_colmap_anchor \
+    --stage evaluate --execute --resume
+done
+```
 
-> **待办 A（已拍板：保留、暂不做）**：collision 的 `coverage`(recall) 现用完整 stl_total 被
-> DTU 背景底盘拉低。要可比 coverage 需套 **DTU 官方 ObsMask + Plane 裁剪**（`ObsMask105_10.mat`
-> + `Plane105.mat` 已在盘）。未裁前 benchmark collision 线保持 `skip`。你想做时说一声，Codex
-> CPU 即可完成。
+**预期产物：**每个存在的 `<scan>_<method>/heldout_metrics.json`，并保留
+`test/ours_7000/{renders,gt}`。若某 method 缺 7k PLY，记录缺失路径后停止该 method，不要改参数
+或启动训练。完成后把 json 路径/末尾输出发我，我负责汇总、做 paired 比较并更新论文。
 
-### ✅ 已完成（Codex，2026-07-13，无需你动手；细节见 `EXPERIMENTS-LOG.md` E1–E11）
+### 待 Codex 冻结后再交接：两个 GPU 实验（现在不要跑）
 
-1. **三场景 bundle + 冻结 benchmark**：scan24/65/105 edit/texture 全 **PASS**（certified
-   泄漏恒 0，baseline 0.135–0.281；往返 30.1–35.3 dB）。
-2. **P0.4 碰撞 GT 对齐（确定性）**：预处理 `cameras.npz` 的 `scale_mat`，无需 ICP，残差
-   <0.1% bbox。
-3. **外部对照（P1.2）**：vs Poisson-from-3DGS 与 **SuGaR native mesh**（已发表方法）——假
-   碰撞面 ours 0.9–18% < SuGaR 8–79% < Poisson 54–98%；edit 结构化、texture charting 必要。
-4. **P0.1 诊断**：实证仅 sparse+photometric 观测门限不足以完全 GT 识别，需 Fisher 证书（A4/GPU）。
-5. **可用性演示**：物理 phantom-collision（ours ≤0.10% vs Poisson 2.9–6.5%）、语义部件编辑
-   （certified 泄漏 0% vs proximity 19.7%）、**引擎级 GLB 封装**（三场景）。
-6. **论文 §7.8 + §9 已更新**；产物已 push 到 `emgs_experience`。
-- 更早：A5 协议冻结、A3 photometric、identifiability gate（commit `22ee3d2` / `2e29984`）。
+1. **2DGS 同资产协议（P1.2）**：官方 2DGS DTU 输出尚缺 mesh/asset adapter 与统一 patch/UV
+   语义，不能用现有 plane/torus 结果替代。
+2. **restricted-rendering Fisher/Jacobian（P0.1/A4）**：E4 已证实 sparse+photometric gate
+   无法无损排除 floaters，但 perturbation basis、appearance gauge、归一化与阈值尚未冻结。
+
+### Codex CPU 待办（不需要你跑）
+
+**DTU ObsMask + Plane 裁剪后的 coverage/hausdorff（待办 A）**：完整 `stl_total` 含背景底盘，
+导致 recall 不可比较；裁剪实现/复核后才把 collision 从 `skip` 接入 benchmark gate。
+
+### 不属于“待补”的边界
+
+- 不再以 RGB-only 普遍优于 2DGS/SuGaR/GeoSplat 为目标：现有证据反对该 claim。
+- 完整 UV atlas/material baking、引擎内验证、真实深度多 seed 与完整 Gauss--Codazzi 训练是
+  future work，不能阻塞本轮论文收口。
 
 （下面是完整历史账本，各 Action 的最终状态见各自小节。）
 
