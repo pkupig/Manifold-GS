@@ -24,9 +24,9 @@ texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pil
 尚有 **4 条论文证据缺口**：coverage recall、appearance、2DGS 同资产口径、P0.1 Fisher 证书。
 其中仅前两项可以立刻交给你运行；后两项必须先由 Codex 冻结脚本，**现在不要自行跑**。
 
-### 待你执行 1：Blender GUI 导入验收（A1，最高优先级，10--20 分钟）
+### 已完成：Blender GUI 导入验收（A1，用户确认 PASS）
 
-在带 GUI 的机器中，从 `pkupig/emgs_experience` 下载
+已在带 GUI 的机器中通过导入验收；该人工 DCC gate 已关闭。素材仍可从 `pkupig/emgs_experience` 下载：
 `dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/asset_glb/scan105_hybrid_asset.glb`，
 拖入 Blender（glTF 2.0）。检查导入无报错；Outliner/material 中可见按 patch 着色的
 `certified_patches` 与半透明 `collision_candidate`；两层对齐且没有明显跨面长三角。
@@ -58,10 +58,14 @@ done
 2. **restricted-rendering Fisher/Jacobian（P0.1/A4）**：E4 已证实 sparse+photometric gate
    无法无损排除 floaters，但 perturbation basis、appearance gauge、归一化与阈值尚未冻结。
 
-### Codex CPU 待办（不需要你跑）
+### 已完成：DTU 官方 ObsMask + Plane coverage 诊断（Codex CPU）
 
-**DTU ObsMask + Plane 裁剪后的 coverage/hausdorff（待办 A）**：完整 `stl_total` 含背景底盘，
-导致 recall 不可比较；裁剪实现/复核后才把 collision 从 `skip` 接入 benchmark gate。
+已严格按 DTUeval 规则完成：候选面在 DTU mm 帧按 `ObsMaskNN_10.mat` 过滤，GT 在 `PlaneNN.mat`
+正侧过滤，距离再在 Gaussian 帧度量。结果（coverage@1% / @3% bbox）：scan24 **27.7% / 75.2%**，
+scan65 **33.5% / 64.4%**，scan105 **55.5% / 88.9%**。因此背景底盘混淆已消除，但三场的 coverage
+仍不一致；scan24/65 未达到冻结 gate（80%@≤3%），不能将 collision track 统一改为 PASS。
+结果文件位于各 bundle 的 `asset_eval/collision_official_mask.json`；实现为
+`scripts/evaluate_collision_dtu_masked.py`。
 
 ### 不属于“待补”的边界
 

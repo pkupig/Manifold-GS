@@ -246,3 +246,19 @@
 - **2DGS mesh** 走同一 collision/edit/texture 口径（GPU）。
 - **appearance 轴**：held-out PSNR/SSIM/LPIPS（GPU 渲染）。
 - **P0.1 第二版**：restricted-rendering Fisher/Jacobian 几何可识别性证书（GPU/A4）——E4 已实证其必要性。
+
+
+## E12 · P0.4 官方 DTU ObsMask + Plane coverage 诊断
+
+- **目的**：消除完整 `stl_total` 背景底盘对 collision coverage/hausdorff 的污染，按 DTU 官方评测口径测可见表面 recall。
+- **方法**：新增 `scripts/evaluate_collision_dtu_masked.py`。候选 mesh 的面积均匀样本先用 `cameras.npz` 的 `scale_mat_0` 转为 DTU mm 帧，严格采用官方 `ObsMask/BB/Res` 的 round-to-grid 与 60 mm padding 过滤；GT 点用同一变换后按 `PlaneNN.mat` 的正侧过滤。距离仍在 Gaussian 帧计算，确保与既有 bbox-fraction tolerance 可比。
+- **结果**（coverage，越高越好）：
+
+  | 场景 | @1% bbox | @3% bbox | 达到 80% 的最小 sweep tolerance |
+  |---|---:|---:|---:|
+  | scan24 | 27.7% | 75.2% | 5% |
+  | scan65 | 33.5% | 64.4% | 5%（@5%=79.95%，采样误差下近阈） |
+  | scan105 | 55.5% | 88.9% | 3% |
+
+- **结论**：官方裁剪确实移除了背景底盘混淆，但没有把三场 coverage 变成统一 PASS；按冻结 `asset-benchmark/1.0` 的 80%@≤3% 门槛，只有 scan105 可过，scan24/65 仍 FAIL。故 collision track 不接入三场 overall；论文应报告这是保守 precision 与 coverage 的真实取舍，而不是把未裁剪的低 coverage 归因于背景。
+- **结果文件**：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/collision_official_mask.json`。
