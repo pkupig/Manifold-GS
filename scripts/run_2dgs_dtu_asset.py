@@ -35,7 +35,7 @@ def main() -> None:
     parser.add_argument("--stage", choices=("train", "render", "mesh", "evaluate", "all"), default="all")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--conda-env", default="surfel_splatting")
+    parser.add_argument("--conda-env", default="sugar")
     parser.add_argument("--iterations", type=int, default=30000)
     parser.add_argument("--mesh-res", type=int, default=1024)
     parser.add_argument("--num-cluster", type=int, default=50)

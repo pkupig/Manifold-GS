@@ -50,7 +50,7 @@ texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pil
 
    ```bash
    cd /root/autodl-tmp/E-Manifold-GS
-   conda run --no-capture-output -n surfel_splatting python scripts/run_2dgs_dtu_asset.py \
+   conda run --no-capture-output -n sugar python scripts/run_2dgs_dtu_asset.py \
      --scan 24 --scan 65 --scan 105 --stage all --execute --resume
    ```
 
@@ -329,7 +329,7 @@ CUDA 子模块完整。不要直接覆盖当前 3DGS 环境；下一步需要隔
 
 ## Action 3：2DGS 外部 baseline（已完成）
 
-2DGS 协议与静态 adapter 已冻结，独立环境 `surfel_splatting` 已修复并验证。不要再
+2DGS 协议与静态 adapter 已冻结，当前机器统一使用 `sugar` 环境（已补装并验证 2DGS `diff_surfel_rasterization`）。不要再
 执行 `conda env create -f environment.yml`，否则会重复触发 CUDA 扩展安装问题。
 
 当前已验证：PyTorch `2.0.0 + CUDA 11.8`、CUDA compiler `11.8`、GCC/G++ `11.4`、
