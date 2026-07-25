@@ -46,7 +46,7 @@ appearance 已由现有三场 held-out 结果回填。Fisher **协议已冻结**
 1. **2DGS 同资产协议（P1.2）**：官方 2DGS DTU 输出尚缺 mesh/asset adapter 与统一 patch/UV
    语义，不能用现有 plane/torus 结果替代。
 2. **restricted-rendering Fisher/Jacobian（P0.1/A4，冻结 `restricted-fisher/v1`）**：实现与
-   单 patch GPU smoke 已完成；正式 sweep 只需要跑下面三个独立命令。每场景可以中断后单独重跑，
+   三场景单 patch GPU smoke 已完成；正式 sweep 只需要跑下面三个独立命令。每场景可以中断后单独重跑，
    不会改 checkpoint；输出仅写入各自 `asset_eval/restricted_fisher_v1.json`。
 
    ```bash
