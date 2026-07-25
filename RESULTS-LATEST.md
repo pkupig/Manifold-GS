@@ -531,7 +531,15 @@ CPU gate 阈值；这是诊断，不是 gate 变更。
 24）明确保留为弱识别；scan65 的 1 个 patch 因只剩 1 个有效 first-hit 视图而保守拒绝。该证书不能
 替代 P0.4 的 GT collision precision，也不能证明 RGB-only 全局唯一重建。
 
-结果文件：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json`；实现：
+**只读 GT 诊断（不回调阈值）：**按 collision candidate 的 patch，在同一 1% bbox GT 距离口径下，
+scan24 的 22 个 floater Fisher 中位为 **0.01133**，低于 139 个 clean 的 **0.04307**，说明局部
+敏感度对该簇 floaters 有排序信号；但仍有 **15/22** floater 落在场景 p10 之上而被标 supported。
+scan105 的 3 个 floater 则全部 supported（中位 0.05218，clean 0.07363），scan65 没有 floater。
+所以 v1 不足以成为自动 floater filter；它只能诚实地给出固定外观下的局部敏感度排序，保留 collision-GT
+作为 precision 侧独立证据。
+
+结果文件：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json`；关联诊断：
+`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/fisher_collision_gt_diagnostic_v1.json`；实现：
 `scripts/evaluate_restricted_fisher.py`，协议：`FISHER-PROTOCOL-ZH.md`。
 
 ## 4.6 P1.3 三轴主表骨架（scan24/65/105，CPU 部分，2026-07-13）

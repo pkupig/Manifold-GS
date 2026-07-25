@@ -284,6 +284,7 @@
   | scan65 | 164 | 146 | 17 | 1 | 0.00186 / 0.02088 / 0.16934 |
   | scan105 | 234 | 210 | 24 | 0 | 0.02077 / 0.07810 / 0.42990 |
 
-- **结论**：该 v1 是固定 appearance 下的局部敏感度/相对排序证书；p10 定义使约 90% supported 属协议预期，不能作为跨场景绝对成功率或完整全局 identifiability claim。弱识别 patch 与 scan65 的视图不足 patch 均如实保留。
-- **结果文件**：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json`（含 7k checkpoint SHA-256）。
+- **GT 只读诊断**：在同一 1% bbox collision 距离定义下，scan24 22 个 floater 的 Fisher 中位 0.01133，低于 139 个 clean 的 0.04307，但仍有 15/22 floater 为 supported；scan105 的 3 个 floater 全为 supported；scan65 无 floater。未以该结果改阈值。
+- **结论**：该 v1 是固定 appearance 下的局部敏感度/相对排序证书；p10 定义使约 90% supported 属协议预期，不能作为跨场景绝对成功率或完整全局 identifiability claim，也不足以自动过滤 floaters。弱识别 patch 与 scan65 的视图不足 patch 均如实保留。
+- **结果文件**：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json`（含 7k checkpoint SHA-256）；GT 诊断：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/fisher_collision_gt_diagnostic_v1.json`。
 - **提交**：runner `88c5d91`、恢复/Action `5f8da0a`、checkpoint-hash 审计及文档见本次提交；叙事 `RESULTS-LATEST.md` §4.5.1。
