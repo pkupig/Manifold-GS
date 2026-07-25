@@ -267,4 +267,23 @@
 ## E13 · P1.3 held-out appearance 回填 + P0.1 Fisher v1 协议冻结
 
 - **appearance 结果**（固定 `test.txt`）：scan24 vanilla/full PSNR = 30.967/30.856 dB、SSIM = 0.93489/0.93492；scan65 = 31.503/32.127、0.97049/0.97228；scan105 = 32.866/33.103、0.96500/0.96533。三场结果均已在 `$OUT/scanNN_{vanilla_matched,manifold_full}/heldout_metrics.json`，不重跑。
-- **Fisher 协议**：冻结为 `restricted-fisher/v1`，详见 `FISHER-PROTOCOL-ZH.md`：normal-only 中心差分、epsilon=0.5% bbox、冻结 appearance/shape/opacity、first-hit 训练视图、alpha mask、每视图最多 4096 像素、>=3 视图和>=256 像素、每场景 p10 Fisher 阈值。尚未实现/运行，不得将协议冻结误记为证书完成。
+- **Fisher 协议**：冻结为 `restricted-fisher/v1`，详见 `FISHER-PROTOCOL-ZH.md`：normal-only 中心差分、epsilon=0.5% bbox、冻结 appearance/shape/opacity、first-hit 训练视图、alpha mask、每视图最多 4096 像素、>=3 视图和>=256 像素、每场景 p10 Fisher 阈值。随后由 E14 全量实现并运行。
+
+
+---
+
+## E14 · P0.1 restricted-rendering Fisher v1 三场正式 sweep
+
+- **目的**：补充 accepted patch 在固定外观条件下沿局部法向的局部 RGB 敏感度证据；不以 GT 决定阈值。
+- **协议/实现**：`restricted-fisher/v1`（`FISHER-PROTOCOL-ZH.md`）；`scripts/evaluate_restricted_fisher.py`。中心差分 `epsilon=0.005×bbox diagonal`，冻结 SH/opacity/scale/rotation，只取 first-hit 训练视图、alpha 有效 footprint、每视图最多 4096 像素、seed 0；有效 patch 场景内 Fisher p10 判定。
+- **结果**：总计 51,388 次渲染；无数值未解。
+
+  | 场景 | accepted | supported | weak | insufficient | p10 / p50 / p90 |
+  |---|---:|---:|---:|---:|---:|
+  | scan24 | 184 | 165 | 19 | 0 | 0.00627 / 0.04035 / 0.20845 |
+  | scan65 | 164 | 146 | 17 | 1 | 0.00186 / 0.02088 / 0.16934 |
+  | scan105 | 234 | 210 | 24 | 0 | 0.02077 / 0.07810 / 0.42990 |
+
+- **结论**：该 v1 是固定 appearance 下的局部敏感度/相对排序证书；p10 定义使约 90% supported 属协议预期，不能作为跨场景绝对成功率或完整全局 identifiability claim。弱识别 patch 与 scan65 的视图不足 patch 均如实保留。
+- **结果文件**：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json`（含 7k checkpoint SHA-256）。
+- **提交**：runner `88c5d91`、恢复/Action `5f8da0a`、checkpoint-hash 审计及文档见本次提交；叙事 `RESULTS-LATEST.md` §4.5.1。

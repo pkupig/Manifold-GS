@@ -7,7 +7,7 @@ translations, renders its cached first-hit training cameras, and restores the
 checkpoint centers immediately after each image.
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, hashlib, json, sys
 from pathlib import Path
 import numpy as np
 
@@ -58,6 +58,14 @@ def patch_sources(bundle: Path, evidence: Path, selected: set[int] | None):
         for idx in ids: bits |= bits_by_source.get(int(idx), np.uint64(0))
         result[patch] = (np.unique(ids), bits, names)
     return result
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def render_shifted(camera, gaussians, pipeline, background, original, rows, delta):
@@ -118,7 +126,10 @@ def main() -> None:
         if 'status' not in rec:
             fisher = float('nan') if rec['fisher'] is None else rec['fisher']
             rec['status'] = classify_patch(fisher, rec['views'], rec['pixels'], threshold)
-    out = {'protocol_version': PROTOCOL_VERSION, 'epsilon_fraction': known.epsilon_fraction, 'epsilon': epsilon, 'pixels_per_view': known.pixels_per_view, 'seed': known.seed, 'bbox_diagonal': bbox, 'fisher_p10_threshold': threshold, 'records': records}
+    checkpoint = Path(args.model_path) / 'point_cloud' / f'iteration_{args.iteration}' / 'point_cloud.ply'
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f'checkpoint point cloud not found: {checkpoint}')
+    out = {'protocol_version': PROTOCOL_VERSION, 'checkpoint': {'iteration': args.iteration, 'path': str(checkpoint), 'sha256': sha256_file(checkpoint)}, 'epsilon_fraction': known.epsilon_fraction, 'epsilon': epsilon, 'pixels_per_view': known.pixels_per_view, 'seed': known.seed, 'bbox_diagonal': bbox, 'fisher_p10_threshold': threshold, 'records': records}
     Path(known.out).parent.mkdir(parents=True, exist_ok=True); Path(known.out).write_text(json.dumps(out, indent=2, allow_nan=False)+'\n')
     print(json.dumps({'out': known.out, 'patches': len(records), 'threshold': threshold, 'status': {s: sum(r['status']==s for r in records) for s in sorted({r['status'] for r in records})}}, indent=2))
 if __name__ == '__main__': main()

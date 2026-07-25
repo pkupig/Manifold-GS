@@ -508,8 +508,31 @@ sparse+photometric 双闸为何漏网。
 
 **结论（P0.1）**：GT-free 的 sparse+photometric 观测闸对"被相机看到但几何脱离真实表面"
 的 floater 只有部分区分力，无单一 CPU 门限可无损清除 → **实证了需要第二版 restricted-
-rendering Fisher/Jacobian 几何可识别性证书**（GPU，见 `ACTION-用户执行.md` A4）。未改任何
-冻结阈值；这是诊断，不是 gate 变更。
+rendering Fisher/Jacobian 几何可识别性证书**；该冻结 v1 已在三场完成，结果见下一节。未改任何
+CPU gate 阈值；这是诊断，不是 gate 变更。
+
+## 4.5.1 P0.1 restricted-rendering Fisher v1 正式证书（2026-07-25）
+
+按冻结 `restricted-fisher/v1`，对 observation gate 接受的 patch 仅沿 PCA 法向做
+`±0.005 × bbox diagonal` 中心差分；SH、opacity、scale、rotation 和非目标 Gaussian 均固定。
+每个 patch 只渲染其 first-hit 训练视图，并用 alpha mask 与每视图最多 4096 个冻结 seed-0 像素。
+三场共完成 **51,388** 次渲染；每份 JSON 均记录 7k checkpoint 的 SHA-256，且没有 NaN/Inf
+未解项。
+
+| 场景 | accepted | supported | weak | insufficient / unresolved | Fisher p10 / p50 / p90 |
+|---|---:|---:|---:|---:|---:|
+| scan24 | 184 | 165 (89.7%) | 19 | 0 / 0 | 0.00627 / 0.04035 / 0.20845 |
+| scan65 | 164 | 146 (89.0%) | 17 | 1 / 0 | 0.00186 / 0.02088 / 0.16934 |
+| scan105 | 234 | 210 (89.7%) | 24 | 0 / 0 | 0.02077 / 0.07810 / 0.42990 |
+
+**正确读法：**`fisher_supported` 的场景内阈值被定义为有效 patch 的 p10，故接近 90% 的支持率是
+冻结的**相对排序口径**，不是可跨场景比较的绝对成功率，也不应写成“90% 获得了真值认证”。它补充的是
+固定 appearance 条件下的局部法向 RGB 敏感度：60 个 weak patch（scan24 19、scan65 17、scan105
+24）明确保留为弱识别；scan65 的 1 个 patch 因只剩 1 个有效 first-hit 视图而保守拒绝。该证书不能
+替代 P0.4 的 GT collision precision，也不能证明 RGB-only 全局唯一重建。
+
+结果文件：`$OUT/scanNN_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json`；实现：
+`scripts/evaluate_restricted_fisher.py`，协议：`FISHER-PROTOCOL-ZH.md`。
 
 ## 4.6 P1.3 三轴主表骨架（scan24/65/105，CPU 部分，2026-07-13）
 
@@ -521,6 +544,8 @@ CPU 数；coverage(recall) 已完成 ObsMask+Plane 官方裁剪诊断，appearan
 | 识别 | patches identified% | 48.3% | 42.1% | 58.2% |
 | 识别 | identified surface area% | 54.2% | 49.5% | 61.9% |
 | 识别 | rejected: sparse / photo | 175 / 22 | 206 / 20 | 139 / 29 |
+| 局部敏感度 | Fisher supported（accepted 中） | 89.7% | 89.0% | 89.7% |
+| 局部敏感度 | Fisher weak / insufficient | 19 / 0 | 17 / 1 | 24 / 0 |
 | precision | collision floater%（unsupported area）| **18.25%** | 0.87% | 1.54% |
 | precision | candidate→GT p95（%bbox）| 5.13% | 0.66% | 0.50% |
 | precision | normal median（°）| 49.5 | 51.7 | 52.2 |

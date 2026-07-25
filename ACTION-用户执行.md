@@ -21,9 +21,8 @@ DTU GT 通过 `scale_mat` 确定性对齐；Poisson 与 SuGaR collision precisio
 texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pilot 均已完成。详情见
 `EXPERIMENTS-LOG.md` E1--E11。
 
-尚有 **2 条主要证据缺口**：2DGS 同资产口径、P0.1 Fisher 证书。coverage 已完成官方裁剪诊断，
-appearance 已由现有三场 held-out 结果回填。Fisher **协议已冻结**（`FISHER-PROTOCOL-ZH.md`），
-但实现尚未完成，当前仍不要自行跑。
+尚有 **1 条主要证据缺口**：2DGS 同资产口径。coverage 已完成官方裁剪诊断，appearance 已由
+现有三场 held-out 结果回填；P0.1 Fisher v1 的三场正式 sweep 也已完成（`FISHER-PROTOCOL-ZH.md`）。
 
 ### 已完成：Blender GUI 导入验收（A1，用户确认 PASS）
 
@@ -41,44 +40,18 @@ appearance 已由现有三场 held-out 结果回填。Fisher **协议已冻结**
 **0.93489 → 0.93492**；scan65 **31.503 → 32.127 dB**、**0.97049 → 0.97228**；scan105
 **32.866 → 33.103 dB**、**0.96500 → 0.96533**。LPIPS 未纳入本轮冻结口径。
 
-### 待你执行：两个 GPU 实验
+### 待你执行：一个 GPU 实验
 
 1. **2DGS 同资产协议（P1.2）**：官方 2DGS DTU 输出尚缺 mesh/asset adapter 与统一 patch/UV
    语义，不能用现有 plane/torus 结果替代。
-2. **restricted-rendering Fisher/Jacobian（P0.1/A4，冻结 `restricted-fisher/v1`）**：实现与
-   三场景单 patch GPU smoke 已完成；正式 sweep 只需要跑下面三个独立命令。每场景可以中断后单独重跑，
-   不会改 checkpoint；输出仅写入各自 `asset_eval/restricted_fisher_v1.json`。
 
-   ```bash
-   cd /root/autodl-tmp/E-Manifold-GS
-   # scan24：184 patches，13,256 次渲染
-   conda run --no-capture-output -n sugar python scripts/evaluate_restricted_fisher.py \
-     --bundle /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan24_vanilla_matched/hybrid_asset \
-     --evidence /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan24_vanilla_matched/hybrid_asset/asset_eval/observation_evidence_fisher_v1.npz \
-     --out /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan24_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json \
-     -s /root/autodl-tmp/emgs-real/dtu-preprocessed/DTU/scan24 \
-     -m /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan24_vanilla_matched --iteration 7000
+### 已完成：restricted-rendering Fisher/Jacobian（P0.1/A4，`restricted-fisher/v1`）
 
-   # scan65：164 patches，13,288 次渲染
-   conda run --no-capture-output -n sugar python scripts/evaluate_restricted_fisher.py \
-     --bundle /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan65_vanilla_matched/hybrid_asset \
-     --evidence /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan65_vanilla_matched/hybrid_asset/asset_eval/observation_evidence_fisher_v1.npz \
-     --out /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan65_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json \
-     -s /root/autodl-tmp/emgs-real/dtu-preprocessed/DTU/scan65 \
-     -m /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan65_vanilla_matched --iteration 7000
-
-   # scan105：234 patches，24,844 次渲染
-   conda run --no-capture-output -n sugar python scripts/evaluate_restricted_fisher.py \
-     --bundle /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset \
-     --evidence /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/asset_eval/observation_evidence_fisher_v1.npz \
-     --out /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json \
-     -s /root/autodl-tmp/emgs-real/dtu-preprocessed/DTU/scan105 \
-     -m /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched --iteration 7000
-   ```
-
-   **验收：**每个 JSON 的 `protocol_version` 必须为 `restricted-fisher/v1`，且每条 record
-   都有 `status`；把三份 JSON 路径发我即可。总计 **51,388** 次渲染，建议独占 GPU 串行运行；
-   不要传 `--epsilon-fraction`、`--pixels-per-view` 或 `--seed` 覆盖冻结参数。
+你已完成三个正式 sweep（总计 51,388 次渲染）。产物分别为各 bundle 的
+`asset_eval/restricted_fisher_v1.json`，均含 checkpoint SHA-256、冻结参数及完整 per-patch 状态：
+scan24 **165/184 (89.7%)** supported、19 weak；scan65 **146/164 (89.0%)** supported、17 weak、1
+insufficient views；scan105 **210/234 (89.7%)** supported、24 weak；三场均 **0 unresolved**。
+详情、阈值和正确解释见 `RESULTS-LATEST.md` §4.5.1。该项已关闭，不要重跑。
 
 ### 已完成：DTU 官方 ObsMask + Plane coverage 诊断（Codex CPU）
 
@@ -224,18 +197,11 @@ max_photometric_std_percentile=...)` 与 exporter 的
 12.50 提到 18.36 dB（+5.86），但两者 baked seam 都 ≈ raw-color ceiling，证实剩余 seam 是
 真实跨边界颜色方差、共享 atlas 修不动。完整表见 `RESULTS-LATEST.md` §4.3。
 
-## Action A4：restricted rendering Fisher/Jacobian 证书（不要执行，协议未冻结）
+## Action A4：restricted rendering Fisher/Jacobian 证书（✅已完成 2026-07-25）
 
-**目的：**P0.1 第二版要求——估计 patch 的局部几何方向是否真的被 RGB 约束，即在受限渲染下
-计算 Jacobian/Fisher information 的最小特征值。视图再多，若该方向对光度几乎无梯度，则该
-几何自由度未被识别，应报低置信度而非“已识别 asset”。
-
-**为什么现在不能跑：**需要可微渲染反传每 patch 的局部扰动，GPU 成本高且数值口径
-（扰动基、正则、特征值归一化）未冻结。Codex 先在小合成场景把 Jacobian 累积与最小特征值
-估计写成可测函数并给单测，再冻结真实场景命令。**现在不要在真实场景上跑任何 Fisher 扫描。**
-
-**预期产物（冻结后）：**per-patch `min_fisher_eigenvalue` / `identified_directions`；主张口径从
-“realizability-aware extraction”升级为“identified asset”的证据表。
+冻结 `restricted-fisher/v1` 已在 scan24/65/105 的 matched 7k checkpoint 全量运行完成；结果和
+限制见 `RESULTS-LATEST.md` §4.5.1、`EXPERIMENTS-LOG.md` E14 及 `FISHER-PROTOCOL-ZH.md`。
+不再需要用户操作，也不得以改参数方式重跑 v1。
 
 ## Action A5：下游 asset 任务 benchmark（P0.3/P0.4/P0.5，✅协议已冻结 2026-07-10）
 
