@@ -57,7 +57,7 @@ texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pil
    **成本/恢复：**三场官方 30k 训练 + 测试渲染/metrics + TSDF mesh，GPU 长任务；任一完成 stage
    会被 `--resume` 跳过。产物根目录为
    `/root/autodl-tmp/emgs-real/outputs/2dgs_dtu_asset_v1/scanNN_official_2dgs/`，每场验收为
-   `point_cloud/iteration_30000/point_cloud.ply`、`results.json`、
+   `point_cloud/iteration_30000/point_cloud.ply`、`heldout_metrics.json`、
    `train/ours_30000/fuse_post.ply`、`dtu_evaluation/results.json`、
    `asset_eval/native_mesh_geometry.json` 与 `asset_eval/native_mesh_collision.json` 均存在。
    runner 已自动执行统一的几何、collision、连通编辑单元（topology JSON）评测；完成后告诉我，

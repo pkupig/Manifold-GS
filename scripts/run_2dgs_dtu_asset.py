@@ -68,8 +68,10 @@ def main() -> None:
             run(python + ["render.py", "-s", str(source), "-m", str(output), "--eval",
                           "--iteration", str(args.iterations), "--skip_train", "--skip_mesh", "--quiet"],
                 cwd=TWO_DGS, execute=args.execute, done=rendered, resume=args.resume)
-            run(python + ["metrics.py", "-m", str(output)], cwd=TWO_DGS, execute=args.execute,
-                done=output / "results.json", resume=args.resume)
+            run([args.eval_python, "scripts/evaluate_rendered_images.py", "--renders", str(rendered),
+                 "--gt", str(output / "test" / f"ours_{args.iterations}" / "gt"),
+                 "--out", str(output / "heldout_metrics.json")], cwd=ROOT, execute=args.execute,
+                done=output / "heldout_metrics.json", resume=args.resume)
         mesh = output / "train" / f"ours_{args.iterations}" / "fuse_post.ply"
         if "mesh" in stages:
             run(python + ["render.py", "-s", str(source), "-m", str(output), "--eval",
