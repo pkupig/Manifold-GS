@@ -42,8 +42,24 @@ texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pil
 
 ### 待你执行：一个 GPU 实验
 
-1. **2DGS 同资产协议（P1.2）**：官方 2DGS DTU 输出尚缺 mesh/asset adapter 与统一 patch/UV
-   语义，不能用现有 plane/torus 结果替代。
+1. **2DGS DTU 原生 mesh 基线（P1.2，待你执行）**：已冻结 `2dgs-dtu-asset/v1` runner，使用与
+   本项目完全相同的 DTU `sparse/0/test.txt` held-out split、官方 2DGS 30k 配置、官方训练视图
+   TSDF mesh 导出（`mesh_res=1024`、保留最大 50 个连通分量）。它先建立真实三场 native-mesh
+   对照；**不会伪造 Manifold-GS 的 patch/source binding**，后续 asset 对照会明确标为 native mesh
+   connectivity 而非 certified patches。
+
+   ```bash
+   cd /root/autodl-tmp/E-Manifold-GS
+   conda run --no-capture-output -n surfel_splatting python scripts/run_2dgs_dtu_asset.py \
+     --scan 24 --scan 65 --scan 105 --stage all --execute --resume
+   ```
+
+   **成本/恢复：**三场官方 30k 训练 + 测试渲染/metrics + TSDF mesh，GPU 长任务；任一完成 stage
+   会被 `--resume` 跳过。产物根目录为
+   `/root/autodl-tmp/emgs-real/outputs/2dgs_dtu_asset_v1/scanNN_official_2dgs/`，每场验收为
+   `point_cloud/iteration_30000/point_cloud.ply`、`results.json` 与
+   `train/ours_30000/fuse_post.ply` 均存在。完成后告诉我，我会运行统一的几何、collision、
+   连通编辑单元和纹理可行性对照；在此之前不得声称真实场景优于或等价于 2DGS。
 
 ### 已完成：restricted-rendering Fisher/Jacobian（P0.1/A4，`restricted-fisher/v1`）
 
