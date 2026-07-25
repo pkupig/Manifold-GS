@@ -68,5 +68,12 @@ def classify_patch(fisher: float, views: int, pixels: int, threshold: float | No
 
 def scene_threshold(records: list[dict]) -> float:
     """v1 p10 threshold over only numerically valid, sufficiently observed patches."""
-    values = [float(r["fisher"]) for r in records if int(r.get("views", 0)) >= 3 and int(r.get("pixels", 0)) >= 256 and np.isfinite(float(r["fisher"]))]
+    values = [
+        float(r["fisher"])
+        for r in records
+        if r.get("fisher") is not None
+        and int(r.get("views", 0)) >= 3
+        and int(r.get("pixels", 0)) >= 256
+        and np.isfinite(float(r["fisher"]))
+    ]
     return float(np.quantile(values, 0.10)) if values else float("nan")

@@ -92,7 +92,7 @@ def main() -> None:
         rows = torch.as_tensor(source_ids, dtype=torch.long, device=original.device)
         normal_map = patch_normals(xyz[source_ids], np.full(len(source_ids), patch))
         if patch not in normal_map:
-            records.append({'patch_id': patch, 'fisher': float('nan'), 'views': 0, 'pixels': 0, 'status': 'numerically_unresolved'}); continue
+            records.append({'patch_id': patch, 'fisher': None, 'views': 0, 'pixels': 0, 'status': 'numerically_unresolved'}); continue
         delta = torch.as_tensor(normal_map[patch] * epsilon, dtype=original.dtype, device=original.device)
         values=[]; pixels=0; views=0
         for bit, name in enumerate(names):
@@ -109,13 +109,15 @@ def main() -> None:
                 value, count = finite_difference_fisher(plus, minus, epsilon, valid)
                 if count: values.append((value, count)); pixels += count; views += 1
             except Exception as exc:
-                records.append({'patch_id': patch, 'fisher': float('nan'), 'views': views, 'pixels': pixels, 'status': 'numerically_unresolved', 'error': str(exc)}); break
+                records.append({'patch_id': patch, 'fisher': None, 'views': views, 'pixels': pixels, 'status': 'numerically_unresolved', 'error': str(exc)}); break
         else:
-            fisher = float(np.average([v for v,c in values], weights=[c for v,c in values])) if values else float('nan')
+            fisher = float(np.average([v for v,c in values], weights=[c for v,c in values])) if values else None
             records.append({'patch_id': patch, 'fisher': fisher, 'views': views, 'pixels': pixels})
     threshold = scene_threshold(records)
     for rec in records:
-        if 'status' not in rec: rec['status'] = classify_patch(rec['fisher'], rec['views'], rec['pixels'], threshold)
+        if 'status' not in rec:
+            fisher = float('nan') if rec['fisher'] is None else rec['fisher']
+            rec['status'] = classify_patch(fisher, rec['views'], rec['pixels'], threshold)
     out = {'protocol_version': PROTOCOL_VERSION, 'epsilon_fraction': known.epsilon_fraction, 'epsilon': epsilon, 'pixels_per_view': known.pixels_per_view, 'seed': known.seed, 'bbox_diagonal': bbox, 'fisher_p10_threshold': threshold, 'records': records}
     Path(known.out).parent.mkdir(parents=True, exist_ok=True); Path(known.out).write_text(json.dumps(out, indent=2, allow_nan=False)+'\n')
     print(json.dumps({'out': known.out, 'patches': len(records), 'threshold': threshold, 'status': {s: sum(r['status']==s for r in records) for s in sorted({r['status'] for r in records})}}, indent=2))

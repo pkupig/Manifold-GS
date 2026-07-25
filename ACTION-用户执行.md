@@ -41,12 +41,44 @@ appearance 已由现有三场 held-out 结果回填。Fisher **协议已冻结**
 **0.93489 → 0.93492**；scan65 **31.503 → 32.127 dB**、**0.97049 → 0.97228**；scan105
 **32.866 → 33.103 dB**、**0.96500 → 0.96533**。LPIPS 未纳入本轮冻结口径。
 
-### 待 Codex 冻结后再交接：两个 GPU 实验（现在不要跑）
+### 待你执行：两个 GPU 实验
 
 1. **2DGS 同资产协议（P1.2）**：官方 2DGS DTU 输出尚缺 mesh/asset adapter 与统一 patch/UV
    语义，不能用现有 plane/torus 结果替代。
-2. **restricted-rendering Fisher/Jacobian（P0.1/A4）**：协议 v1 已冻结于
-   `FISHER-PROTOCOL-ZH.md`；下一步是 Codex 按该协议实现，完成前不要手动跑 GPU sweep。
+2. **restricted-rendering Fisher/Jacobian（P0.1/A4，冻结 `restricted-fisher/v1`）**：实现与
+   单 patch GPU smoke 已完成；正式 sweep 只需要跑下面三个独立命令。每场景可以中断后单独重跑，
+   不会改 checkpoint；输出仅写入各自 `asset_eval/restricted_fisher_v1.json`。
+
+   ```bash
+   cd /root/autodl-tmp/E-Manifold-GS
+   # scan24：184 patches，13,256 次渲染
+   conda run --no-capture-output -n sugar python scripts/evaluate_restricted_fisher.py \
+     --bundle /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan24_vanilla_matched/hybrid_asset \
+     --evidence /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan24_vanilla_matched/hybrid_asset/asset_eval/observation_evidence_fisher_v1.npz \
+     --out /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan24_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json \
+     -s /root/autodl-tmp/emgs-real/dtu-preprocessed/DTU/scan24 \
+     -m /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan24_vanilla_matched --iteration 7000
+
+   # scan65：164 patches，13,288 次渲染
+   conda run --no-capture-output -n sugar python scripts/evaluate_restricted_fisher.py \
+     --bundle /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan65_vanilla_matched/hybrid_asset \
+     --evidence /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan65_vanilla_matched/hybrid_asset/asset_eval/observation_evidence_fisher_v1.npz \
+     --out /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan65_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json \
+     -s /root/autodl-tmp/emgs-real/dtu-preprocessed/DTU/scan65 \
+     -m /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan65_vanilla_matched --iteration 7000
+
+   # scan105：234 patches，24,844 次渲染
+   conda run --no-capture-output -n sugar python scripts/evaluate_restricted_fisher.py \
+     --bundle /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset \
+     --evidence /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/asset_eval/observation_evidence_fisher_v1.npz \
+     --out /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched/hybrid_asset/asset_eval/restricted_fisher_v1.json \
+     -s /root/autodl-tmp/emgs-real/dtu-preprocessed/DTU/scan105 \
+     -m /root/autodl-tmp/emgs-real/outputs/dtu_real_pilot_v1/scan105_vanilla_matched --iteration 7000
+   ```
+
+   **验收：**每个 JSON 的 `protocol_version` 必须为 `restricted-fisher/v1`，且每条 record
+   都有 `status`；把三份 JSON 路径发我即可。总计 **51,388** 次渲染，建议独占 GPU 串行运行；
+   不要传 `--epsilon-fraction`、`--pixels-per-view` 或 `--seed` 覆盖冻结参数。
 
 ### 已完成：DTU 官方 ObsMask + Plane coverage 诊断（Codex CPU）
 

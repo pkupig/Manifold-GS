@@ -21,3 +21,11 @@ def test_patch_normals_sign_independent_plane():
     normals = patch_normals(xyz, np.array([7,7,7,8,8,8]))
     assert np.isclose(abs(normals[7][2]), 1.0)
     assert np.isclose(abs(normals[8][1]), 1.0)
+
+
+def test_scene_threshold_ignores_serialised_unresolved_record():
+    records = [
+        {"fisher": None, "views": 3, "pixels": 256},
+        {"fisher": 2.0, "views": 3, "pixels": 256},
+    ]
+    assert np.isclose(scene_threshold(records), 2.0)
