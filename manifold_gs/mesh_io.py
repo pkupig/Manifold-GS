@@ -8,36 +8,46 @@ import numpy as np
 
 
 def read_triangle_mesh_ply(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
-    """Read the ASCII triangle PLY files emitted by this project."""
+    """Read a triangle PLY, including binary PLYs emitted by external baselines."""
     path = Path(path)
-    with path.open("r", encoding="ascii") as f:
-        if f.readline().strip() != "ply":
-            raise ValueError(f"Not a PLY file: {path}")
-        vertex_count = face_count = None
-        while True:
-            line = f.readline()
-            if not line:
-                raise ValueError(f"PLY has no end_header: {path}")
-            parts = line.strip().split()
-            if parts[:2] == ["element", "vertex"]:
-                vertex_count = int(parts[2])
-            elif parts[:2] == ["element", "face"]:
-                face_count = int(parts[2])
-            elif parts == ["end_header"]:
-                break
-        if vertex_count is None or face_count is None:
-            raise ValueError(f"PLY is missing vertex or face counts: {path}")
-        vertices = np.asarray(
-            [[float(x) for x in f.readline().split()[:3]] for _ in range(vertex_count)],
-            dtype=np.float32,
-        )
-        faces: list[list[int]] = []
-        for _ in range(face_count):
-            row = [int(x) for x in f.readline().split()]
-            if not row or row[0] != 3 or len(row) < 4:
-                raise ValueError("Only triangular faces are supported")
-            faces.append(row[1:4])
-    return vertices, np.asarray(faces, dtype=np.int64).reshape(-1, 3)
+    try:
+        with path.open("r", encoding="ascii") as f:
+            if f.readline().strip() != "ply":
+                raise ValueError(f"Not a PLY file: {path}")
+            vertex_count = face_count = None
+            while True:
+                line = f.readline()
+                if not line:
+                    raise ValueError(f"PLY has no end_header: {path}")
+                parts = line.strip().split()
+                if parts[:2] == ["element", "vertex"]:
+                    vertex_count = int(parts[2])
+                elif parts[:2] == ["element", "face"]:
+                    face_count = int(parts[2])
+                elif parts == ["end_header"]:
+                    break
+            if vertex_count is None or face_count is None:
+                raise ValueError(f"PLY is missing vertex or face counts: {path}")
+            vertices = np.asarray(
+                [[float(x) for x in f.readline().split()[:3]] for _ in range(vertex_count)],
+                dtype=np.float32,
+            )
+            faces: list[list[int]] = []
+            for _ in range(face_count):
+                row = [int(x) for x in f.readline().split()]
+                if not row or row[0] != 3 or len(row) < 4:
+                    raise ValueError("Only triangular faces are supported")
+                faces.append(row[1:4])
+        return vertices, np.asarray(faces, dtype=np.int64).reshape(-1, 3)
+    except UnicodeDecodeError:
+        import trimesh
+        mesh = trimesh.load(path, force="mesh", process=False)
+        if not isinstance(mesh, trimesh.Trimesh) or len(mesh.faces) == 0:
+            raise ValueError(f"Not a non-empty triangle mesh: {path}")
+        faces = np.asarray(mesh.faces, dtype=np.int64)
+        if faces.ndim != 2 or faces.shape[1] != 3:
+            raise ValueError("Only triangular faces are supported")
+        return np.asarray(mesh.vertices, dtype=np.float32), faces
 
 
 def write_triangle_mesh_ply(path: str | Path, vertices: np.ndarray, faces: np.ndarray) -> None:
