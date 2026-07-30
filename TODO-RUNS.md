@@ -1,5 +1,8 @@
 # TODO Runs
 
+> **归档说明（2026-07-31）：** 以下是阶段性路线/日志，不是当前待办。当前实验收口状态以 `PAPER-ZH.md` §7.8、`RESULTS-LATEST.md` §4.12--4.13 和 `ACTION-用户执行.md` 顶部为准：2DGS、Fisher、三场 asset benchmark、外部区域编辑均已完成；water-tight mesh、renderer round-trip 和完整 UV atlas 不属于本文 claim。
+
+
 ## 当前状态：暂时不要跑 2k
 
 此前给出的 `synthetic_mcgs_2k` / `synthetic_vanilla_2k` 只能继续验证工程链路，

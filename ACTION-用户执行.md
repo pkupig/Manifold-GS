@@ -14,6 +14,22 @@
 - 长 GPU sweep、完整外部 baseline、批量真实场景和会产生大日志的任务先写入这里，
   经你执行后我负责汇总、诊断和写论文。
 
+## 已完成：外部区域编辑标注（asset-segmentation/v1，Blender GUI；2026-07-31）
+
+**目的：**补齐不依赖本文 patch ID 的局部编辑/分割证据。现有 zero-leak 证明的是 source
+mapping 的正确性；本项把一个**外部定义**的真实部件区域近似到 patch 单元，避免循环论证。
+
+**请标三个区域：**scan24、scan65、scan105 各一个可辨识物体部件/局部区域。用 Blender/MeshLab
+打开对应 `hybrid_asset/certified_patches.ply`，选取该区域的 mesh vertices，并分别保存零基 vertex
+index（每行一个整数）到 `scanNN_part_vertex_indices.txt`。不要按 patch 颜色整块选择；边界可以穿过
+patch，正是该协议要评估的内容。`certified_patches.ply` 的 vertex 顺序与
+`asset_mapping.npz["source_indices"]` 一一对应。
+
+**结果：**用户以 Blender 在 `certified_patches.ply`（非按 patch 色块）标注并回传三场区域：
+1,759 / 1,805 / 1,932 个顶点。顶点 index 经 `asset_mapping.npz[\"source_indices\"]` 确定性转换为
+source ID，正式结果写入各 bundle 的 `asset_eval/external_region_edit_v1.json`；转换脚本为
+`scripts/prepare_external_region_labels.py`。无需重跑。
+
 ## ⭐ 当前收口清单（2026-07-25；只执行标为“待你执行”的项）
 
 **已完成：**三场景（DTU scan24/65/105）bundle 与冻结 asset benchmark 的 edit/texture 全 PASS；
@@ -21,8 +37,8 @@ DTU GT 通过 `scale_mat` 确定性对齐；Poisson 与 SuGaR collision precisio
 texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pilot 均已完成。详情见
 `EXPERIMENTS-LOG.md` E1--E11。
 
-尚有 **1 条主要证据缺口**：2DGS 同资产口径。coverage 已完成官方裁剪诊断，appearance 已由
-现有三场 held-out 结果回填；P0.1 Fisher v1 的三场正式 sweep 也已完成（`FISHER-PROTOCOL-ZH.md`）。
+**当前没有待你执行的 Action。** 2DGS 原生 DTU mesh、Fisher 三场 sweep、外部人工区域编辑与
+asset CPU 评测均已关闭；下方早期 Action 仅作历史账本，不能视为当前待办。
 
 ### 已完成：Blender GUI 导入验收（A1，用户确认 PASS）
 
@@ -40,28 +56,23 @@ texture charting、物理/编辑 demo、三份 GLB，以及 SuGaR 三场 8GB pil
 **0.93489 → 0.93492**；scan65 **31.503 → 32.127 dB**、**0.97049 → 0.97228**；scan105
 **32.866 → 33.103 dB**、**0.96500 → 0.96533**。LPIPS 未纳入本轮冻结口径。
 
-### 待你执行：一个 GPU 实验
+### 已完成：2DGS DTU 原生 mesh 基线（P1.2）
 
-1. **2DGS DTU 原生 mesh 基线（P1.2，待你执行）**：已冻结 `2dgs-dtu-asset/v1` runner，使用与
-   本项目完全相同的 DTU `sparse/0/test.txt` held-out split、官方 2DGS 30k 配置、官方训练视图
-   TSDF mesh 导出（`mesh_res=1024`、保留最大 50 个连通分量）。它先建立真实三场 native-mesh
-   对照；**不会伪造 Manifold-GS 的 patch/source binding**，后续 asset 对照会明确标为 native mesh
-   connectivity 而非 certified patches。
+已按冻结的 `2dgs-dtu-asset/v1` 跑完 scan24/65/105：官方 2DGS 30k、固定
+`sparse/0/test.txt` held-out split、官方训练视图 TSDF mesh（`mesh_res=1024`、最大 50 个
+连通分量），并以统一 P0.4 collision evaluator 评分。三场产物均完整，位于
+`/root/autodl-tmp/emgs-real/outputs/2dgs_dtu_asset_v1/scanNN_official_2dgs/`。
 
-   ```bash
-   cd /root/autodl-tmp/E-Manifold-GS
-   conda run --no-capture-output -n sugar python scripts/run_2dgs_dtu_asset.py \
-     --scan 24 --scan 65 --scan 105 --stage all --execute --resume
-   ```
+| scan | 2DGS held-out PSNR / SSIM | 2DGS floater% @1% bbox | coverage @1% | mesh components |
+|---|---:|---:|---:|---:|
+| 24 | 24.599 / 0.8982 | 21.06% | 69.85% | 12 |
+| 65 | 29.300 / 0.8589 | 13.69% | 48.69% | 16 |
+| 105 | 28.424 / 0.8668 | 11.42% | 51.83% | 6 |
 
-   **成本/恢复：**三场官方 30k 训练 + 测试渲染/metrics + TSDF mesh，GPU 长任务；任一完成 stage
-   会被 `--resume` 跳过。产物根目录为
-   `/root/autodl-tmp/emgs-real/outputs/2dgs_dtu_asset_v1/scanNN_official_2dgs/`，每场验收为
-   `point_cloud/iteration_30000/point_cloud.ply`、`heldout_metrics.json`、
-   `train/ours_30000/fuse_post.ply`、`dtu_evaluation/results.json`、
-   `asset_eval/native_mesh_geometry.json` 与 `asset_eval/native_mesh_collision.json` 均存在。
-   runner 已自动执行统一的几何、collision、连通编辑单元（topology JSON）评测；完成后告诉我，
-   我会汇总并补 texture 可行性对照。在此之前不得声称真实场景优于或等价于 2DGS。
+对照本文 certified collision candidate 的 floater% 为 18.25% / 0.87% / 1.54%，
+coverage 为 37.07% / 26.26% / 40.97%。严格结论是：本文三场均以更低 coverage 换取更低
+假碰撞面；这不是“全面优于 2DGS”。2DGS 原生 mesh 不含 patch/source mapping，故不参加
+本文结构化编辑绑定的数值比较。结果已回填 `PAPER-ZH.md`；无需重跑。
 
 ### 已完成：restricted-rendering Fisher/Jacobian（P0.1/A4，`restricted-fisher/v1`）
 
@@ -110,7 +121,7 @@ Fisher/Jacobian 证书、以及下游 asset benchmark——需要 GPU/图像/训
 在这三项闭环前，当前 cache 仍只能叫 realizability + 几何观测支持，不得称完整
 identifiability certificate。
 
-## Action A1：Blender 导入与人工完整性检查（待执行，低算力/需 GUI）
+## Action A1：Blender 导入与人工完整性检查（历史已完成，勿重跑）
 
 **目的：**确认标准 OBJ/PLY 能被真实 DCC 工具读取，patch 分组、开放边界和 collision
 candidate 没有导出层面的损坏。这只是工程 gate，不是论文性能实验。
@@ -596,7 +607,7 @@ python scripts/summarize_targeted_sweep.py \
 
 状态：claim/evidence matrix 与论文骨架已完成。下一阶段转 DTU 真实数据。
 
-## Action 12：准备 DTU 真实数据（待执行，不占 GPU）
+## Action 12：准备 DTU 真实数据（历史已完成，勿重跑）
 
 项目盘空间不足，**不要把数据下载到本项目或 E 盘**。当前实际使用 D 盘：
 
@@ -854,7 +865,7 @@ full budget，只作同机同 split 诊断。完整表见 `RESULTS-LATEST.md` �
 误指向 SampleSet 双层目录、缺 `stl105_total.ply`）的残留日志，问题已由
 `dtu_official_layout.py` 解决，可删除。
 
-## Action 20：SuGaR-DTU scan24/65 复验（待执行，需 3090 + sugar 环境）
+## Action 20：SuGaR-DTU scan24/65 复验（历史已完成，勿重跑）
 
 **目的：**把 SuGaR 的 DTU 公平对照从单场景 scan105 扩到与 3DGS/anchor 相同的三个
 scans。scan105 已作为 discovery 完成；scan24/65 用**完全相同**的 8GB pilot 预算与

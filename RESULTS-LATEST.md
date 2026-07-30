@@ -604,8 +604,9 @@ physics/collision，假面即错误碰撞——这正是本方法的价值主张
 
 口径说明：precision 主指标用稳健的**面积比 floater%**（Poisson 的 candidate→GT p95 距离被
 `projected_points` 远端 floater 撑爆，属离群伪影）。SuGaR-culled 是 DTU-mask 过的物体级
-mesh（对 SuGaR 更有利，非稻草人）。edit/texture 线的外部 baseline（需把对手 mesh 绑回
-Gaussian 做编辑传播）与 2DGS 仍待补，见 `ACTION-用户执行.md`。
+mesh（对 SuGaR 更有利，非稻草人）。不把外部 mesh 强绑回 Gaussian 来制造不公平 edit baseline；
+已完成的外部定义区域协议（§4.13）直接报告 patch 对人工区域的近似与 leakage，而 2DGS 仅参与
+其有意义的原生 mesh collision 对照。
 
 ## 4.8 P1.2 edit 轴外部对比：结构化可编辑性（2026-07-13）
 
@@ -703,3 +704,54 @@ GT）测不同东西——scan24 floater 18% 但 phantom 仅 0.10%，因为那�
   P0.4 揭示 scan24 存在 GT-free 闸挡不住的 floater 簇——collision-vs-GT 的独立价值。
 - 尚未证明：RGB-only 普遍优于 2DGS、SuGaR 或任何 GeoSplat 实现；真实深度先验下的多 seed 收益；完整
   Gauss-Codazzi training；任意场景的 manifold/GT 收敛。
+
+## 4.12 统一 5k-face simplification robustness（CPU，2026-07-30）
+
+为直接检验「更适合作为 asset」是否能经受标准后处理，新增冻结诊断
+`asset-simplification/v1`：对 ours、官方 2DGS TSDF、SuGaR native culled mesh 和
+Poisson-from-3DGS，统一进行 Open3D cleanup + quadric decimation 至约 5k faces；随后在
+同一对齐 DTU GT、1% bbox、20k 面采样下报告 collision precision、coverage、拓扑与三角形质量。
+这**不是** isotropic remeshing claim，不能把 quadric decimation 误称为 remesh。
+
+| 场景 | 方法 | floater% ↓ | coverage ↑ | 5% triangle quality ↑ | sliver% ↓ | non-manifold |
+|---|---|---:|---:|---:|---:|---:|
+| scan24 | **ours** | **18.55** | 36.1 | 0.181 | 1.02 | 0 |
+|  | 2DGS | 18.87 | 69.4 | 0.334 | 0.28 | 0 |
+|  | SuGaR | 78.89 | 68.7 | 0.299 | 0.86 | 0 |
+|  | Poisson | 98.51 | 26.8 | 0.428 | 0.20 | 0 |
+| scan65 | **ours** | **0.81** | 26.1 | 0.160 | 1.76 | 0 |
+|  | 2DGS | 12.21 | 48.5 | 0.428 | 0.10 | 0 |
+|  | SuGaR | 17.16 | 46.1 | 0.407 | 0.24 | 0 |
+|  | Poisson | 97.36 | 26.2 | 0.450 | 0.12 | 0 |
+| scan105 | **ours** | **1.42** | 40.2 | 0.289 | 0.34 | 0 |
+|  | 2DGS | 10.12 | 51.6 | 0.446 | 0.04 | 0 |
+|  | SuGaR | 7.46 | 51.6 | 0.399 | 0.18 | 0 |
+|  | Poisson | 52.39 | 74.3 | 0.432 | 0.06 | 0 |
+
+**结论与边界。** 本文的 conservative collision precision 经降面后保持：相对原 mesh，coverage
+仅变为 37.1→36.1、26.3→26.1、41.0→40.2%，且三场 floater% 仍最低。它不能证明本文
+在所有 mesh-quality 指标上占优：2DGS/Poisson 的三角形更规则、sliver 更少，本文因保留开放
+认证 patch 而有更多 connected components。这正是本文的资产定位——宁可保留可编辑的未知边界，
+也不以闭合/平滑换取虚假的 collision surface。脚本：`scripts/evaluate_mesh_simplification.py`；
+原始 JSON 位于各 bundle 的 `asset_eval/simplification_robustness_v1.json`。
+
+
+## 4.13 外部定义区域编辑（CPU，2026-07-31）
+
+`external-region-edit/v1` 使用独立 Blender 选区，而非 patch ID：操作者仅依据几何外观在每个
+`certified_patches.ply` 圈选连续局部；零基 PLY vertex index 经
+`asset_mapping.npz["source_indices"]` 转为 source ID。固定 patch-overlap 阈值 50%，并以
+$0.1\times$ attached-bbox diagonal 作刚体平移。脚本：`scripts/prepare_external_region_labels.py` 与
+`scripts/evaluate_external_region_edit.py`。
+
+| scene | 外部顶点 | patch IoU | precision / recall | certified 非目标移动% | radius 非目标移动% | certified / radius residual% |
+|---|---:|---:|---:|---:|---:|---:|
+| scan24 | 1,759 | 0.274 | 0.619 / 0.329 | **0.36** | 22.26 | **0.00** / 24.15 |
+| scan65 | 1,805 | 0.525 | 0.678 / 0.700 | **0.95** | 43.87 | **0.00** / 45.37 |
+| scan105 | 1,932 | 0.525 | 0.684 / 0.694 | **0.66** | 19.20 | **0.00** / 20.37 |
+
+**解释与边界。** 外部选区跨越自动 patch 边界，故 patch 近似并不完美，scan24 的低 recall
+明确暴露了这个粒度限制；不可将该结果写成零误差 semantic segmentation。它支持的较窄结论是：
+在外部区域近似到 certified patch 后，编辑保持保守，且不污染 residual；几何 radius binding 虽
+完整覆盖原 target，却误移动 19--44% 的非目标点。原始 JSON 位于各 bundle 的
+`asset_eval/external_region_edit_v1.json`。

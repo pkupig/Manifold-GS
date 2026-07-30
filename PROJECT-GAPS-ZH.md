@@ -1,5 +1,8 @@
 # 项目缺口与收口路线
 
+> **归档说明（2026-07-31）：** 以下是阶段性路线/日志，不是当前待办。当前实验收口状态以 `PAPER-ZH.md` §7.8、`RESULTS-LATEST.md` §4.12--4.13 和 `ACTION-用户执行.md` 顶部为准：2DGS、Fisher、三场 asset benchmark、外部区域编辑均已完成；water-tight mesh、renderer round-trip 和完整 UV atlas 不属于本文 claim。
+
+
 更新日期：2026-07-04。本文件回答“当前方法已经有什么、还差什么、什么结果才能升级
 论文 claim”。长任务的用户执行命令仍统一写入 `ACTION-用户执行.md`。
 

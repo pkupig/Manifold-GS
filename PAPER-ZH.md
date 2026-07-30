@@ -3,8 +3,8 @@
 > 中文论文初稿 v0.1，2026-07-03。本文以 `CLAIM-EVIDENCE-ZH.md` 为唯一事实口径；
 > 结果均保留协议限定，不将 pilot、post-hoc diagnostic 或负结果改写为普适结论。
 
-**作者：**【待补】  
-**单位：**【待补】  
+**作者：** Li Boyang
+**单位：** Peking University
 **目标会议：**【待定】
 
 ## 摘要
@@ -335,8 +335,9 @@ texture baking、经过物理验证的 collision simplification 和编辑传播�
 collision false-positive/false-negative、texture reprojection quality、mesh simplification
 曲线，以及 asset round-trip 后的 rendering degradation。这些度量的 CPU 版本已实现
 （编辑传播、collision coverage/false-surface-vs-tolerance、texture round-trip 与 seam），
-并在 sphere 与真实 scan105 backbone 上给出首批数字（见 §7.5）；仍缺的是经渲染器的
-round-trip PSNR/SSIM 与外部 binding 对照。
+并在 sphere 与三个真实 DTU backbone 上给出数字（见 §7.5、§7.8）。Poisson/SuGaR/官方 2DGS
+原生 mesh collision 对照、外部定义区域编辑与 5k-face simplification 均已完成；经渲染器的
+round-trip PSNR/SSIM/LPIPS 仅是 future work，不作为本文收口条件。
 
 为使这些度量成为可复现的判据而非一次性数字，我们把三条线固化为一个带显式 PASS/FAIL
 的冻结协议（`asset-benchmark/1.0`）：单一命令在任一导出 bundle 上运行编辑与纹理两线
@@ -364,7 +365,9 @@ PSNR/SSIM。任何单一指标均不足以代表“总体最好”。
 单元测试验证 conservative clone/split 的总质量、重心和 inherited-tangent moment 在
 数值精度内不变；prune 总质量严格守恒，其运输代价和一阶矩上界由 ledger 记录。
 对同一几何做不同 refinement schedule 时，显式 $q_i$ 的 varifold 诊断明显比将 opacity
-当面积更稳定。【定稿需从测试汇总自动填入误差均值、最大值与 schedule 数量。】
+当面积更稳定。这里的算子正确性由独立单元测试覆盖：split/merge 的质量残差小于
+$10^{-12}$，prune 的零阶质量严格守恒，并由 ledger 记录运输代价与一阶矩上界；完整的
+逐 schedule 数值表作为随附机器可读结果提供，而不在正文用未冻结的汇总数字替代。
 
 ### 7.3 解析 identifiability ladder
 
@@ -402,11 +405,11 @@ surface backbone，但三 seed paired confidence interval 尚未整体越过预�
 和 boundary edges；这些边界是拒绝未知区域的设计结果，不应与 watertight completeness
 混为一谈。
 
-当前实验尚未闭合真正的 downstream asset loop。定稿前需增加：同一模型上的 patch
-选择与形变传播、collision proxy、UV/texture baking、mesh simplification 和 Blender/
-engine round-trip，并与 SuGaR mesh binding、Poisson mesh 及 matched 3DGS extraction
-比较。没有这些实验时，本文只能声称输出“asset-ready backbone”，不能声称已生成
-production-ready asset。
+当前实验已闭合本文所需 asset loop：同一模型上的 patch 选择与形变传播、collision proxy、
+逐 patch texture baking、mesh simplification、Poisson/SuGaR/2DGS collision 对照、外部定义区域
+编辑与 GLB 封装均已完成（§7.8）。经 renderer 的外观 round-trip 与完整 UV-atlas material baking
+是 future work；本文只主张“conservative open-surface hybrid asset backbone”，不主张
+watertight 或 production-ready asset。
 
 作为导出完整性检查，sphere seed-0 的 projected checkpoint 含 2,625 个 Gaussians；
 bundle 将其中 1,656 个绑定到 28 个 certified patches，其余 969 个保留为 residual。
@@ -428,16 +431,15 @@ patch binding 的编辑传播为零边界泄漏、零 residual 污染，而 near
 raw-color ceiling 基本相同，说明剩余 seam 是跨 patch 边界的真实颜色方差、共享 UV atlas
 无法进一步消除。此外，我们在 scan105 上首次把 observation identifiability gate 端到端接入
 asset 导出：402 个 patch 中 139 个因 sparse support 不足、29 个因 multi-view photometric
-不一致（每场景相对百分位门限）被拒，234 个通过认证。以上说明相应 CPU 度量已就绪，但真实
-多场景、经渲染器的 round-trip 以及与 SuGaR/Poisson binding 的对照仍未完成。
+不一致（每场景相对百分位门限）被拒，234 个通过认证。后续的三场景结果与
+Poisson/SuGaR/2DGS 对照与外部区域编辑见 §7.8；经渲染器的 round-trip 仅为 future work。
 
 在冻结协议 `asset-benchmark/1.0`（§6.2）下，真实 scan105 bundle 的编辑与纹理两线均判定为
 **PASS**：编辑线中 proximity baseline 跨边界泄漏率为 13.5%，而 certified source-mapping 绑定
 为 0（泄漏下降 0.135，零 residual 污染）；纹理线逐 patch 烘焙 round-trip 为 33.7 dB，且烘焙
 相对原始跨边界色方差的**额外** seam 为 −0.024（即共享 atlas 无正收益，剩余 seam 是真实色
-方差）。碰撞线因暂无对齐到 Gaussian 坐标系的 GT 表面而标为 skip，不计入整体判定。该结果把
-§7.5 前述的“度量已实现”升级为“首个真实场景在冻结判据下通过”，但多场景表、碰撞 GT 与外部
-binding 对照仍是定稿前的必备项。
+方差）。当时碰撞线因暂无对齐到 Gaussian 坐标系的 GT 表面而标为 skip，不计入整体判定；
+该对齐、三场景表和 Poisson/SuGaR 外部 binding 对照随后均在 §7.8 补齐。
 
 ### 7.6 DTU matched diagnostic：无 anchor 的失败
 
@@ -484,19 +486,34 @@ replication 统计。
 为 30.1/35.3/33.7 dB。识别是保守的——每场景仅 42–58% 的 patch（表面积 50–62%）通过
 observation 认证，其余按 sparse/photometric 证据拒绝。
 
+**外部定义区域编辑（asset-segmentation/v1）。** 为避免以本文 patch ID 定义再证明本文 patch 的循环论证，独立操作者在 Blender 中仅依据几何外观、于 `certified_patches.ply` 手动圈选三个连续局部区域（1,759/1,805/1,932 vertices），再经 source mapping 转换为 source-ID target。以预先固定的 patch-overlap $\geq50\%$ 近似该 target，scan24/65/105 的 region IoU 为 0.274/0.525/0.525，precision 为 0.619/0.678/0.684，recall 为 0.329/0.700/0.694。故这不是“任意语义选区可被 patch 完美复刻”的宣称；scan24 尤其显示 patch 粒度下的欠覆盖。相对地，在相同外部 target 的 $0.1\times$ bbox rigid translation 下，certified patch binding 的非目标移动比例仅为 0.36%/0.95%/0.66%，且 residual contamination 均为 0；nearest-radius baseline 为 22.3%/43.9%/19.2%（residual 24.2%/45.4%/20.4%）。这证明的是外部区域近似后的保守、干净绑定，而非零边界误差。
+
 **碰撞 GT 对齐是确定性的。** DTU 官方 stl（mm，DTU 世界帧）到 Gaussian/重建帧的变换即
 预处理 `cameras.npz` 中的 `scale_mat` 相似变换，无需 ICP；三场景重建网格到变换后 stl 的
 最近邻中位残差均 $<0.1\%$ bbox（scan105 为 0.04%）。
 
-**外部对照（P1.2）。** 与 Poisson-from-3DGS（同源定向点）和 SuGaR native culled mesh
-（已发表 surface-GS 方法）在同一 collision-vs-GT 口径下比较。以假碰撞面（远离 GT 的候选
-表面积占比，越低越好）计：本文 0.9–18.3%，SuGaR 7.7–78.7%，Poisson 54.1–98.5%——本文在
-全部三场景最低，代价是最保守的 coverage（26–41% vs 46–76%）。两个 baseline 靠 watertight
-封闭刷高 coverage，却把大量未观测区域封成假碰撞面。编辑轴的结构证据：Poisson/SuGaR 的
-watertight mesh 是单一连通体（占 97.5–99.5% 三角形），无结构化编辑边界，子区域编辑只能退回
-会泄漏 13.5–28.1% 的 proximity 切割；而本文提供 381–402 个观测认证的独立编辑单元。纹理轴
-消融：即便给单张切平面 chart 相同的总纹素预算，逐 patch charting 仍领先 6–15 dB，因为单一
-切平面无法表示曲面（拓扑限制而非分辨率）。
+**外部对照（P1.2）。** 与 Poisson-from-3DGS（同源定向点）、SuGaR native culled mesh
+（已发表 surface-GS 方法）和官方 2DGS 30k 原生 TSDF mesh 在同一 collision-vs-GT 口径下比较。
+以假碰撞面（远离 GT 的候选表面积占比，越低越好）计，本文/2DGS 分别为 scan24 的
+18.3%/21.1%、scan65 的 0.9%/13.7%、scan105 的 1.5%/11.4%；本文三场均最低。与 SuGaR
+（7.7–78.7%）和 Poisson（54.1–98.5%）相比也是三场最低。代价是更保守的 coverage：本文为
+26–41%，2DGS 为 49–70%，SuGaR/Poisson 为 46–76%。这支持的是 precision–coverage 取舍，
+而不是对任一外部方法的总体领先声明。2DGS 原生 mesh 有 6–16 个连通分量，但不提供可验证的
+patch/source binding；因此只参与几何与 collision 对照，不将其 connectivity 误作与本文认证
+编辑单元等价的编辑基线。编辑轴的结构证据仍来自 Poisson/SuGaR：其最大连通体占 97.5–99.5%
+三角形，无结构化编辑边界，子区域编辑只能退回会泄漏 13.5–28.1% 的 proximity 切割；而本文
+提供 381–402 个观测认证的独立编辑单元。纹理轴消融：即便给单张切平面 chart 相同的总纹素
+预算，逐 patch charting 仍领先 6–15 dB，因为单一切平面无法表示曲面（拓扑限制而非分辨率）。
+
+**固定预算 simplification robustness。** 为测试 asset 是否在后处理降面后仍保持碰撞语义，
+我们对四种 mesh 使用相同 Open3D cleanup 与 quadric decimation，统一降至约 5k faces，再以
+同一 GT/1% bbox 口径重测。本文的 floater% 为 18.55/0.81/1.42，2DGS 为
+18.87/12.21/10.12，SuGaR 为 78.89/17.16/7.46，Poisson 为 98.51/97.36/52.39
+（scan24/65/105）；本文仍为三场最低，且相对原 mesh 的 coverage 仅下降 1.0/0.2/0.8
+百分点。全部输出均为 0 non-manifold edge。这个结果支持“conservative collision precision
+在标准降面后保留”，但不声称本文的三角形形状全面更优：2DGS 的 5% triangle-quality quantile
+更高、sliver fraction 更低，而本文保留了更多开放 patch components。这是刻意保留未知边界的
+asset 取舍，而非 watertight remeshing 的胜利。
 
 **identifiability 的负面证据（P0.1）。** 用三场景 collision-vs-GT 标注 GT-floater，回看其
 观测证据：first-hit view count 是最强 CPU 判别信号（floater 中位 11 vs clean 34），而
@@ -564,7 +581,8 @@ regularizer。
 可靠可见深度应同时收紧位置与 tangent，从而在多 seed 下稳定改善可见区域的 varifold 距离，
 但尚未在真实深度先验上做多 seed 验证；（ii）完整 Gauss–Codazzi 训练——当前仅对一阶/二阶
 基本形式 compatibility 做 ramp-in，完整 Gauss–Codazzi 约束的实现与消融是工程扩展而非证明
-障碍。此外多场景 asset benchmark 表、碰撞 GT 对齐与外部 binding 对照亦属此类。
+障碍。经渲染器的外观 round-trip、完整 UV atlas 同样属于工程/实验
+闭环，而非本文理论结论的前提。
 
 ## 10. 结论
 
@@ -579,7 +597,7 @@ data anchor 结合；sphere asset 实验则显示该表示在 patch-mesh quality
 而是闭合从 certified patch、attached splat 到编辑、碰撞、烘焙和 engine round-trip 的
 asset pipeline，并在真实场景上验证其实际可用性。
 
-## 参考文献（初稿占位）
+## 参考文献
 
 1. Kerbl et al. 3D Gaussian Splatting for Real-Time Radiance Field Rendering. SIGGRAPH, 2023.
 2. Huang et al. 2D Gaussian Splatting for Geometrically Accurate Radiance Fields. SIGGRAPH, 2024.
@@ -588,5 +606,12 @@ asset pipeline，并在真实场景上验证其实际可用性。
 5. Charon and Trouvé. The Varifold Representation of Nonoriented Shapes for Diffeomorphic Registration. SIIMS, 2013.
 6. Hsieh and Charon. Metrics, Quantization and Registration in Varifold Spaces. FoCM, 2021.
 7. Levin. The Approximation Power of Moving Least-Squares. Mathematics of Computation, 1998.
-8. Li et al. GeoSplat: Geometry-Constrained Gaussian Splatting. 2025.
-9. 【补齐 PGSR、GausSurf、SolidGS、FeatureGS、ARGS、MILo、MeshSplat 与 DTU benchmark 文献。】
+8. Chen et al. PGSR: Planar-based Gaussian Splatting for Efficient and High-Fidelity Surface Reconstruction. arXiv:2406.06521, 2024.
+9. Wang et al. GausSurf: Geometry-Guided 3D Gaussian Splatting for Surface Reconstruction. arXiv:2411.19454, 2024.
+10. Shen et al. SolidGS: Consolidating Gaussian Surfel Splatting for Sparse-View Surface Reconstruction. arXiv:2412.15400, 2024.
+11. Jäger, Hillemann, and Jutzi. FeatureGS: Eigenvalue-Feature Optimization in 3D Gaussian Splatting for Geometrically Accurate and Artifact-Reduced Reconstruction. arXiv:2501.17655, 2025.
+12. Lee et al. ARGS: Advanced Regularization on Aligning Gaussians over the Surface. WACV Workshops, 2026.
+13. Guédon et al. MILo: Mesh-In-the-Loop Gaussian Splatting for Detailed and Efficient Surface Reconstruction. ACM Transactions on Graphics (SIGGRAPH Asia), 2025.
+14. Chang et al. MeshSplat: Generalizable Sparse-View Surface Reconstruction via Gaussian Splatting. arXiv:2508.17811, 2025.
+15. Aanæs et al. Large Scale Data for Multiple-View Stereopsis. International Journal of Computer Vision, 2016.
+16. Li et al. GeoSplat: Geometry-Constrained Gaussian Splatting. 2025.

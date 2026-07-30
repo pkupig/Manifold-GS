@@ -8,6 +8,8 @@ Scores three meshes against the same DTU GT surface (collision-vs-GT, §4.7):
            to build the GT npz);
 - poisson: Poisson-from-3DGS over the SAME oriented points ``projected_points.ply``
            (open3d depth=9 + density-quantile trim + input-bbox crop).
+- 2DGS:    official 2DGS native TSDF mesh, scored by the same frozen P0.4
+           collision evaluator during ``run_2dgs_dtu_asset.py``.
 
 All CPU. GT npz (``gt_surface_stlNNN.npz``) must already exist beside the bundle
 (built by the P0.4 alignment step). Writes a JSON + Markdown table next to OUT.
@@ -64,6 +66,7 @@ def _precision(metrics: dict, bbox_diag: float) -> dict:
 
 def compare_scene(bundle: Path, gt_npz: Path, projected_points: Path,
                   sugar_culled: Path | None, cameras_npz: Path | None,
+                  two_dgs_collision: Path | None, two_dgs_mesh: Path | None,
                   samples: int = 50000, seed: int = 0) -> dict:
     gt = np.load(str(gt_npz))
     gx = np.asarray(gt["xyz"], dtype=np.float64)
@@ -88,6 +91,20 @@ def compare_scene(bundle: Path, gt_npz: Path, projected_points: Path,
     pv, pf = poisson_from_points(str(projected_points), str(bundle / "baselines" / "poisson_fair.ply"))
     m = surface_coverage_metrics(pv, pf, gx, gn, tolerance=tol, samples=samples, seed=seed)
     row["poisson"] = {**_precision(m, dg), "faces": int(pf.shape[0])}
+    # Native 2DGS is already scored by the frozen shared evaluator.
+    if two_dgs_collision is not None and two_dgs_collision.is_file() and two_dgs_mesh is not None:
+        report = json.loads(two_dgs_collision.read_text(encoding="utf-8"))
+        coverage = report["coverage"]
+        _, faces = read_triangle_mesh_ply(str(two_dgs_mesh))
+        row["2dgs_native"] = {
+            "faces_or_samples": int(coverage["candidate_samples"]),
+            "floater_fraction": float(coverage["false_surface_fraction"]),
+            "coverage_at_1pct": float(coverage["coverage"]),
+            "candidate_to_reference_p95_pctbbox": float(coverage["candidate_to_reference_p95"] / dg * 100),
+            "normal_median_deg": float(coverage["supported_normal_median_deg"]),
+            "faces": int(faces.shape[0]),
+        }
+
     return row
 
 
@@ -100,6 +117,7 @@ def main() -> None:
     )
     parser.add_argument("--sugar-root", default="/root/autodl-tmp/emgs-real/outputs/sugar_dtu_pilot_v1")
     parser.add_argument("--dtu-root", default="/root/autodl-tmp/emgs-real/dtu-preprocessed/DTU")
+    parser.add_argument("--two-dgs-root", default="/root/autodl-tmp/emgs-real/outputs/2dgs_dtu_asset_v1")
     parser.add_argument("--scenes", nargs="+", default=["scan24", "scan65", "scan105"])
     parser.add_argument("--out", default=None, help="output json (default <pilot-root>/collision_precision_comparison.json)")
     args = parser.parse_args()
@@ -116,6 +134,8 @@ def main() -> None:
             pilot / f"{scan}_vanilla_matched" / "asset" / "projected_points.ply",
             Path(args.sugar_root) / scan / "dtu_native_mesh" / "culled_mesh.ply",
             Path(args.dtu_root) / scan / "cameras.npz",
+            Path(args.two_dgs_root) / f"{scan}_official_2dgs" / "asset_eval" / "native_mesh_collision.json",
+            Path(args.two_dgs_root) / f"{scan}_official_2dgs" / "train" / "ours_30000" / "fuse_post.ply",
         )}
         scenes.append(row)
 
@@ -126,6 +146,7 @@ def main() -> None:
             "ours": "observation-certified collision_candidate.ply",
             "sugar_culled": "SuGaR DTU-eval culled_mesh (mm->normalized)",
             "poisson": "Poisson-from-3DGS over projected_points (depth9, dens-q0.1, bbox crop)",
+            "2dgs_native": "official 2DGS 30k TSDF mesh, shared collision evaluator",
         },
         "scenes": scenes,
     }
@@ -133,7 +154,7 @@ def main() -> None:
 
     lines = ["| scene | method | faces | floater% | coverage@1% | normal° |", "|---|---|---:|---:|---:|---:|"]
     for r in scenes:
-        for mth in ("ours", "sugar_culled", "poisson"):
+        for mth in ("ours", "sugar_culled", "poisson", "2dgs_native"):
             if mth not in r:
                 continue
             d = r[mth]

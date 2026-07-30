@@ -423,6 +423,21 @@ def test_relative_photometric_percentile_gate_is_per_scene(tmp_path: Path) -> No
     assert np.isclose(float(scaled["photometric_std_threshold"]), 1.75, atol=1e-6)
 
 
+def test_mesh_quality_distinguishes_open_boundary_from_nonmanifold() -> None:
+    from manifold_gs.mesh_quality import mesh_topology, triangle_quality
+
+    vertices = np.asarray([[0., 0., 0.], [1., 0., 0.], [1., 1., 0.], [0., 1., 0.]])
+    faces = np.asarray([[0, 1, 2], [0, 2, 3]])
+    topology = mesh_topology(vertices, faces)
+    quality = triangle_quality(vertices, faces)
+    assert topology["components"] == 1
+    assert topology["boundary_edges"] == 4
+    assert topology["nonmanifold_edges"] == 0
+    assert topology["watertight"] is False
+    assert quality["degenerate_fraction"] == 0.0
+    assert float(quality["quality_median"]) > 0.8
+
+
 def test_rigid_deformation_rotates_about_pivot() -> None:
     from manifold_gs.edit_metrics import rigid_deformation
 

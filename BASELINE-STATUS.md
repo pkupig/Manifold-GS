@@ -1,6 +1,8 @@
 # Baseline 接入状态
 
 更新日期：2026-07-03。论文 claim 的最终口径见 `CLAIM-EVIDENCE-ZH.md`。
+> **状态更新（2026-07-31）：** 本文件的 2026-07-03 表格是历史快照。当前 DTU 三场的官方 2DGS 原生 mesh、SuGaR native culled mesh 与 Poisson 均已在统一 collision 口径完成；不再存在“DTU pilot 待运行”或“真实场景 2DGS 待补”。结论仍是 precision--coverage trade-off，绝非总体排名。
+
 
 本文档区分内部消融、已有源码和可比较复现。只有完成同数据、同相机划分、同训练
 预算和同一评测器的条目，才能进入方法优劣结论。
